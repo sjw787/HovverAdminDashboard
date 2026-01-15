@@ -1,0 +1,16 @@
+[project]
+name = "hovveradmindashboard"
+version = "0.1.0"
+description = "Admin Dashboard Backend for Commercial Photography Website"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi>=0.128.0",
+    "uvicorn>=0.40.0",
+    "boto3>=1.35.0",
+    "python-jose[cryptography]>=3.3.0",
+    "python-multipart>=0.0.9",
+    "pydantic-settings>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "requests>=2.31.0",
+    "boto3-stubs~=1.42.28",
+]

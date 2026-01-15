@@ -1,0 +1,465 @@
+{
+	"info": {
+		"_postman_id": "hovver-admin-dashboard-collection",
+		"name": "Hovver Admin Dashboard API",
+		"description": "Complete API collection for testing the Hovver Admin Dashboard backend with AWS Cognito authentication and S3 image management.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{access_token}}",
+				"type": "string"
+			}
+		]
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000",
+			"type": "string"
+		},
+		{
+			"key": "access_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "id_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "refresh_token",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Health Check",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status code is 200\", function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"",
+							"pm.test(\"Response has status field\", function () {",
+							"    var jsonData = pm.response.json();",
+							"    pm.expect(jsonData).to.have.property('status');",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						""
+					]
+				},
+				"description": "Health check endpoint to verify the API is running."
+			},
+			"response": []
+		},
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has access_token\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('access_token');",
+									"    pm.expect(jsonData).to.have.property('id_token');",
+									"    pm.expect(jsonData).to.have.property('refresh_token');",
+									"    ",
+									"    // Save tokens to collection variables",
+									"    pm.collectionVariables.set(\"access_token\", jsonData.access_token);",
+									"    pm.collectionVariables.set(\"id_token\", jsonData.id_token);",
+									"    pm.collectionVariables.set(\"refresh_token\", jsonData.refresh_token);",
+									"});",
+									"",
+									"pm.test(\"Token type is Bearer\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.token_type).to.eql('Bearer');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"username\": \"admin@example.com\",\n    \"password\": \"YourPassword123!\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/login",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"auth",
+								"login"
+							]
+						},
+						"description": "Login with username and password. Returns JWT access token, ID token, and refresh token. The access token is automatically saved to collection variables for use in authenticated requests."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Current User",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has user information\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('username');",
+									"    pm.expect(jsonData).to.have.property('email');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/auth/me",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"auth",
+								"me"
+							]
+						},
+						"description": "Get the current authenticated user's information. Requires valid access token in Authorization header."
+					},
+					"response": []
+				}
+			],
+			"description": "Authentication endpoints for login and user information retrieval."
+		},
+		{
+			"name": "Image Management",
+			"item": [
+				{
+					"name": "Upload Image",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has file key\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('key');",
+									"    pm.expect(jsonData).to.have.property('message');",
+									"    ",
+									"    // Save the image key for deletion tests",
+									"    if (jsonData.key) {",
+									"        pm.collectionVariables.set(\"last_uploaded_image_key\", jsonData.key);",
+									"    }",
+									"});",
+									"",
+									"pm.test(\"Upload was successful\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.message).to.include('uploaded successfully');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/images/upload",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"images",
+								"upload"
+							]
+						},
+						"description": "Upload an image file to S3. The file will be stored with date-based organization (YYYY/MM/DD). Supports common image formats (JPG, JPEG, PNG, GIF, WebP). Maximum file size: 10MB."
+					},
+					"response": []
+				},
+				{
+					"name": "List All Images",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has images array\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('images');",
+									"    pm.expect(jsonData.images).to.be.an('array');",
+									"    pm.expect(jsonData).to.have.property('count');",
+									"});",
+									"",
+									"pm.test(\"Images have required fields\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    if (jsonData.images.length > 0) {",
+									"        var image = jsonData.images[0];",
+									"        pm.expect(image).to.have.property('key');",
+									"        pm.expect(image).to.have.property('url');",
+									"        pm.expect(image).to.have.property('size');",
+									"        pm.expect(image).to.have.property('last_modified');",
+									"    }",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/images/list",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"images",
+								"list"
+							]
+						},
+						"description": "List all images in the S3 bucket with presigned URLs for viewing. URLs are valid for 1 hour by default. Returns image metadata including key, size, and last modified date."
+					},
+					"response": []
+				},
+				{
+					"name": "List Images with Prefix",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has images array\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('images');",
+									"    pm.expect(jsonData.images).to.be.an('array');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/images/list?prefix=2026/01/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"images",
+								"list"
+							],
+							"query": [
+								{
+									"key": "prefix",
+									"value": "2026/01/",
+									"description": "Filter images by prefix (e.g., year/month folder)"
+								}
+							]
+						},
+						"description": "List images filtered by prefix. Useful for getting images from a specific date folder (e.g., '2026/01/14/' for a specific day)."
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Image",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Deletion was successful\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('message');",
+									"    pm.expect(jsonData.message).to.include('deleted successfully');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/images/2026/01/14/image_20260114_120000.jpg",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"images",
+								"2026",
+								"01",
+								"14",
+								"image_20260114_120000.jpg"
+							]
+						},
+						"description": "Delete an image from S3 by its key. The key includes the full path (e.g., '2026/01/14/image_20260114_120000.jpg')."
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Last Uploaded Image",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Deletion was successful\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('message');",
+									"    pm.expect(jsonData.message).to.include('deleted successfully');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"// Check if we have a saved image key",
+									"var imageKey = pm.collectionVariables.get(\"last_uploaded_image_key\");",
+									"if (!imageKey) {",
+									"    console.log(\"No image key found. Please upload an image first.\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/images/{{last_uploaded_image_key}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"images",
+								"{{last_uploaded_image_key}}"
+							]
+						},
+						"description": "Delete the last uploaded image using the saved image key from the upload request. This request uses the collection variable 'last_uploaded_image_key' which is automatically set when you upload an image."
+					},
+					"response": []
+				}
+			],
+			"description": "Endpoints for managing images in S3 bucket - upload, list, and delete operations."
+		},
+		{
+			"name": "API Documentation",
+			"item": [
+				{
+					"name": "OpenAPI Schema",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/openapi.json",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"openapi.json"
+							]
+						},
+						"description": "Get the OpenAPI (Swagger) schema for the API."
+					},
+					"response": []
+				}
+			],
+			"description": "API documentation and schema endpoints."
+		}
+	]
+}
+
