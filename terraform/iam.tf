@@ -85,10 +85,22 @@ resource "aws_iam_role_policy" "ecs_task_cognito" {
       {
         Effect = "Allow"
         Action = [
+          # Authentication
           "cognito-idp:InitiateAuth",
+          "cognito-idp:RespondToAuthChallenge",
+
+          # User information
           "cognito-idp:GetUser",
           "cognito-idp:AdminGetUser",
-          "cognito-idp:ListUsers"
+          "cognito-idp:ListUsers",
+
+          # User management
+          "cognito-idp:UpdateUserAttributes",
+          "cognito-idp:ChangePassword",
+
+          # Password reset
+          "cognito-idp:ForgotPassword",
+          "cognito-idp:ConfirmForgotPassword"
         ]
         Resource = aws_cognito_user_pool.main.arn
       }

@@ -84,41 +84,20 @@ resource "aws_cognito_user_pool_client" "main" {
   # Read and write attributes
   read_attributes = [
     "email",
-    "email_verified"
+    "email_verified",
+    "name",
+    "phone_number",
+    "phone_number_verified"
   ]
 
   write_attributes = [
-    "email"
+    "email",
+    "name",
+    "phone_number"
   ]
 }
 
-# Create admin user
-resource "aws_cognito_user" "admin" {
-  user_pool_id = aws_cognito_user_pool.main.id
-  username     = var.admin_username
-
-  attributes = {
-    email          = var.admin_email
-    email_verified = true
-  }
-
-  # Set a temporary password initially
-  temporary_password = random_password.admin_password.result
-
-  # Don't send email, we'll set permanent password immediately
-  message_action = "SUPPRESS"
-}
-
-# Generate password for admin
-resource "random_password" "admin_password" {
-  length  = 16
-  special = true
-  upper   = true
-  lower   = true
-  numeric = true
-}
-
-# Set permanent password for admin user using AWS provider
+# Cognito User Pool Domain
 resource "aws_cognito_user_pool_domain" "main" {
   domain       = "${var.project_name}-${random_string.domain_suffix.result}"
   user_pool_id = aws_cognito_user_pool.main.id
@@ -130,28 +109,4 @@ resource "random_string" "domain_suffix" {
   upper   = false
 }
 
-# Use AWS CLI through local-exec with proper error handling
-resource "null_resource" "set_admin_password" {
-  depends_on = [aws_cognito_user.admin]
-
-  provisioner "local-exec" {
-    command     = "aws cognito-idp admin-set-user-password --user-pool-id ${aws_cognito_user_pool.main.id} --username ${var.admin_username} --password \"${random_password.admin_password.result}\" --permanent --region ${var.aws_region}"
-    interpreter = ["PowerShell", "-Command"]
-  }
-
-  triggers = {
-    password    = random_password.admin_password.result
-    user_pool   = aws_cognito_user_pool.main.id
-    username    = var.admin_username
-    always_run  = timestamp()
-  }
-}
-
-
-# Output the admin password
-output "admin_password" {
-  description = "Admin user password for login"
-  value       = random_password.admin_password.result
-  sensitive   = true
-}
 

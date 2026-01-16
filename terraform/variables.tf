@@ -16,17 +16,6 @@ variable "aws_region" {
   default     = "us-east-1"
 }
 
-variable "admin_email" {
-  description = "Admin user email address"
-  type        = string
-  default     = "sjw787.sw@gmail.com"
-}
-
-variable "admin_username" {
-  description = "Admin username for Cognito"
-  type        = string
-  default     = "sjw787.sw@gmail.com"
-}
 
 variable "vpc_cidr" {
   description = "CIDR block for VPC"

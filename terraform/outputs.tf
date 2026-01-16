@@ -48,24 +48,6 @@ output "ecs_service_name" {
   value       = aws_ecs_service.app.name
 }
 
-output "admin_user_instructions" {
-  description = "Instructions for admin user setup"
-  value       = <<-EOT
-    Admin user '${var.admin_username}' has been created.
-    A temporary password has been sent to: ${var.admin_email}
-
-    Please check your email and use the temporary password to log in.
-    You will be required to change the password on first login.
-
-    API Endpoint: http://${aws_lb.main.dns_name}
-
-    To set environment variables for your application:
-    export COGNITO_USER_POOL_ID="${aws_cognito_user_pool.main.id}"
-    export COGNITO_CLIENT_ID="${aws_cognito_user_pool_client.main.id}"
-    export S3_BUCKET_NAME="${aws_s3_bucket.images.id}"
-    export AWS_REGION="${var.aws_region}"
-  EOT
-}
 
 output "cloudwatch_log_group" {
   description = "CloudWatch Log Group name"
