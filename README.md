@@ -235,16 +235,25 @@ curl -X DELETE "http://localhost:8000/images/2025/01/14/image_20250114_120000.jp
 
 ```
 .
-├── main.py                 # FastAPI application
-├── auth.py                 # Cognito authentication service
-├── s3_service.py          # S3 image management service
+├── main.py                 # FastAPI application entry point
 ├── config.py              # Configuration management
+├── api/                   # API package
+│   ├── __init__.py       # Package initialization
+│   ├── models/           # Pydantic models
+│   │   └── __init__.py   # Request/response models
+│   ├── routers/          # API route handlers
+│   │   ├── __init__.py   # Router exports
+│   │   ├── auth.py       # Authentication endpoints
+│   │   └── images.py     # Image management endpoints
+│   └── services/         # Business logic services
+│       ├── __init__.py   # Service exports
+│       ├── auth.py       # Cognito authentication service
+│       └── s3.py         # S3 image management service
 ├── assume_role.py         # AWS STS role assumption script
 ├── quick_assume.py        # Helper to update .env with assumed credentials
 ├── pyproject.toml         # Python dependencies
 ├── Dockerfile             # Docker container configuration
 ├── .env.example           # Example environment variables
-├── ASSUME_ROLE_README.md  # AWS role assumption documentation
 ├── QUICK_REFERENCE.txt    # Quick reference for role assumption
 ├── terraform/             # Terraform infrastructure
 │   ├── main.tf           # Main Terraform configuration

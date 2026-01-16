@@ -312,3 +312,6 @@ celerybeat.pid
 # macOS compressed archives
 *.dmg
 
+
+# Old backup files
+main_old.py
