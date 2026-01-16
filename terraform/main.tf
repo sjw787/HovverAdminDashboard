@@ -32,3 +32,18 @@ provider "aws" {
   }
 }
 
+# Provider for personal account (admin-legacy) - for ACM certificate and Route53
+provider "aws" {
+  alias   = "admin_legacy"
+  region  = var.aws_region
+  profile = "admin-legacy"
+
+  default_tags {
+    tags = {
+      Project     = var.project_name
+      Environment = var.environment
+      ManagedBy   = "Terraform"
+    }
+  }
+}
+

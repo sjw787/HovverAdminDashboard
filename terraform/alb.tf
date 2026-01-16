@@ -40,16 +40,48 @@ resource "aws_lb_target_group" "app" {
   }
 }
 
-# ALB Listener
+# ALB Listener - HTTP (redirect to HTTPS if certificate is provided or will be created)
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.main.arn
   port              = 80
   protocol          = "HTTP"
 
   default_action {
+    type = (var.ssl_certificate_arn != "" || var.domain_name != "") && var.enable_https_redirect ? "redirect" : "forward"
+
+    # Redirect to HTTPS if certificate is provided or will be created
+    dynamic "redirect" {
+      for_each = (var.ssl_certificate_arn != "" || var.domain_name != "") && var.enable_https_redirect ? [1] : []
+      content {
+        port        = "443"
+        protocol    = "HTTPS"
+        status_code = "HTTP_301"
+      }
+    }
+
+    # Forward to target group if no certificate or redirect disabled
+    target_group_arn = (var.ssl_certificate_arn == "" && var.domain_name == "") || !var.enable_https_redirect ? aws_lb_target_group.app.arn : null
+  }
+}
+
+# ALB Listener - HTTPS (only if certificate is provided or will be created)
+resource "aws_lb_listener" "https" {
+  count = var.ssl_certificate_arn != "" || var.domain_name != "" ? 1 : 0
+
+  load_balancer_arn = aws_lb.main.arn
+  port              = 443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+
+  # Use the newly created certificate ARN (after validation)
+  certificate_arn   = var.domain_name != "" ? aws_acm_certificate_validation.api[0].certificate_arn : var.ssl_certificate_arn
+
+  default_action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.app.arn
   }
+
+  depends_on = [aws_acm_certificate_validation.api]
 }
 
 # Security Group for ALB

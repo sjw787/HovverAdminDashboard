@@ -94,3 +94,26 @@ variable "s3_force_destroy" {
   default     = false
 }
 
+variable "ssl_certificate_arn" {
+  description = "ARN of ACM certificate for HTTPS (in admin-legacy account)"
+  type        = string
+  default     = ""  # Set in terraform.tfvars
+}
+
+variable "domain_name" {
+  description = "Custom domain name for the application"
+  type        = string
+  default     = "api.samwylock.com"
+}
+
+variable "hosted_zone_id" {
+  description = "Route53 Hosted Zone ID for samwylock.com (in admin-legacy account)"
+  type        = string
+  default     = ""  # Set in terraform.tfvars
+}
+
+variable "enable_https_redirect" {
+  description = "Whether to redirect HTTP to HTTPS"
+  type        = bool
+  default     = true
+}

@@ -30,7 +30,12 @@ output "alb_dns_name" {
 
 output "alb_url" {
   description = "Application URL"
-  value       = "http://${aws_lb.main.dns_name}"
+  value       = var.ssl_certificate_arn != "" && var.domain_name != "" ? "https://${var.domain_name}" : (var.ssl_certificate_arn != "" ? "https://${aws_lb.main.dns_name}" : "http://${aws_lb.main.dns_name}")
+}
+
+output "api_url" {
+  description = "API URL (custom domain if configured, otherwise ALB DNS)"
+  value       = var.domain_name != "" ? "https://${var.domain_name}" : "http://${aws_lb.main.dns_name}"
 }
 
 output "ecs_cluster_name" {
