@@ -38,7 +38,10 @@ class EmailService:
         Raises:
             HTTPException: If email sending fails
         """
-        subject = "Welcome to Hovver - Your Account Has Been Created"
+        subject = "Welcome to Hover - Your Account Has Been Created"
+
+        # Get frontend URL from settings
+        login_url = settings.frontend_url
 
         # HTML email body
         html_body = f"""
@@ -81,6 +84,19 @@ class EmailService:
                     font-weight: bold;
                     color: #d32f2f;
                 }}
+                .button {{
+                    display: inline-block;
+                    padding: 12px 30px;
+                    margin: 20px 0;
+                    background-color: #4CAF50;
+                    color: white;
+                    text-decoration: none;
+                    border-radius: 5px;
+                    font-weight: bold;
+                }}
+                .button:hover {{
+                    background-color: #45a049;
+                }}
                 .footer {{
                     text-align: center;
                     padding: 20px;
@@ -92,12 +108,12 @@ class EmailService:
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>Welcome to Hovver!</h1>
+                    <h1>Welcome to Hover!</h1>
                 </div>
                 <div class="content">
                     <p>Hello {recipient_name},</p>
                     
-                    <p>Your Hovver account has been created! You can now access your personalized dashboard and view your photos.</p>
+                    <p>Your Hover account has been created! You can now access your personalized dashboard and view your photos.</p>
                     
                     <div class="credentials">
                         <p><strong>Your Login Credentials:</strong></p>
@@ -107,20 +123,24 @@ class EmailService:
                     
                     <p><strong>Important:</strong> For security reasons, you must change this password when you first log in.</p>
                     
+                    <div style="text-align: center;">
+                        <a href="{login_url}" class="button">Login to Your Account</a>
+                    </div>
+                    
                     <p>To get started:</p>
                     <ol>
-                        <li>Visit the Hovver login page</li>
+                        <li>Click the button above or visit <a href="{login_url}">{login_url}</a></li>
                         <li>Enter your username and temporary password</li>
                         <li>Follow the prompts to set your new password</li>
                     </ol>
                     
                     <p>If you have any questions or need assistance, please don't hesitate to reach out.</p>
                     
-                    <p>Best regards,<br>The Hovver Team</p>
+                    <p>Best regards,<br>The Hover Team</p>
                 </div>
                 <div class="footer">
                     <p>This email was sent to {recipient_email}</p>
-                    <p>© 2026 Hovver. All rights reserved.</p>
+                    <p>© 2026 Hover. All rights reserved.</p>
                 </div>
             </div>
         </body>
@@ -128,33 +148,32 @@ class EmailService:
         """
 
         # Plain text version for email clients that don't support HTML
-        text_body = f"""
-        Welcome to Hovver!
-        
-        Hello {recipient_name},
-        
-        Your Hovver account has been created!
-        
-        Your Login Credentials:
-        Username: {recipient_email}
-        Temporary Password: {temporary_password}
-        
-        IMPORTANT: For security reasons, you must change this password when you first log in.
-        
-        To get started:
-        1. Visit the Hovver login page
-        2. Enter your username and temporary password
-        3. Follow the prompts to set your new password
-        
-        If you have any questions or need assistance, please don't hesitate to reach out.
-        
-        Best regards,
-        The Hovver Team
-        
-        ---
-        This email was sent to {recipient_email}
-        © 2026 Hovver. All rights reserved.
-        """
+        text_body = f"""Welcome to Hover!
+
+Hello {recipient_name},
+
+Your Hover account has been created!
+
+Your Login Credentials:
+Username: {recipient_email}
+Temporary Password: {temporary_password}
+
+IMPORTANT: For security reasons, you must change this password when you first log in.
+
+To get started:
+1. Visit {login_url}
+2. Enter your username and temporary password
+3. Follow the prompts to set your new password
+
+If you have any questions or need assistance, please don't hesitate to reach out.
+
+Best regards,
+The Hover Team
+
+---
+This email was sent to {recipient_email}
+© 2026 Hover. All rights reserved.
+"""
 
         try:
             response = self.client.send_email(

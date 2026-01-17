@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     # Email Configuration
     ses_sender_email: str = "noreply@samwylock.com"
     ses_region: str | None = None  # Defaults to aws_region if not set
+    frontend_url: str = "https://dev.samwylock.com"  # Frontend URL for email links
 
     @property
     def effective_cognito_region(self) -> str:

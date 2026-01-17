@@ -186,6 +186,8 @@ terraform.rc
 # Terraform plan files
 *.tfplan
 *.tfplan.*
+tfplan
+terr.out
 
 # Terraform state lock
 .terraform.tfstate.lock.info
@@ -209,6 +211,15 @@ samconfig.toml
 .cdk.staging/
 cdk.out/
 cdk.context.json
+
+# AWS temporary files
+assume_role_output.txt
+aws_credentials_temp.txt
+
+# SES/DNS temporary files
+ses_*.json
+dns_*.json
+migration_*.json
 
 # ==========================================
 # Logs
@@ -245,6 +256,7 @@ tmp/
 *.bak
 *.backup
 *~
+*_old.py
 
 # Build artifacts
 *.whl
@@ -262,6 +274,19 @@ data/
 # Upload directories (test uploads)
 uploads/
 upload/
+
+# Temporary status/output files
+*_output.txt
+*_status.txt
+check_*.txt
+status_output.txt
+verify_output.txt
+ses_dns_records.json
+
+# Temporary documentation (development notes)
+*_TEMP.txt
+*_NOTES.txt
+*_SCRATCH.txt
 
 # Postman collections (if they contain sensitive data)
 # Uncomment if needed
