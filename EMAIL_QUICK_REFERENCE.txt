@@ -1,0 +1,168 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║              HOVVER ADMIN DASHBOARD - EMAIL FUNCTIONALITY                    ║
+║                      QUICK REFERENCE CARD                                    ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+┌─ EMAIL CONFIGURATION ───────────────────────────────────────────────────────┐
+│                                                                              │
+│  Service:        AWS SES (Simple Email Service)                             │
+│  Sender:         noreply@samwylock.com                                       │
+│  Domain:         samwylock.com (verified)                                    │
+│  Account:        052869941234 (iamadmin-dev)                                 │
+│  Region:         us-east-1                                                   │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌─ AUTOMATIC WELCOME EMAILS ──────────────────────────────────────────────────┐
+│                                                                              │
+│  When customer is created:                                                   │
+│    ✅ Welcome email sent automatically                                       │
+│    ✅ Contains temporary password                                            │
+│    ✅ Includes login instructions                                            │
+│    ✅ Professional HTML template                                             │
+│    ✅ Sent within seconds                                                    │
+│                                                                              │
+│  POST /customers                                                             │
+│  {                                                                           │
+│    "email": "customer@example.com",                                          │
+│    "name": "John Doe",                                                       │
+│    "phone_number": "+12025551234"    (optional)                             │
+│  }                                                                           │
+│                                                                              │
+│  Response includes temporary_password + email sent                           │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌─ RESEND WELCOME EMAIL ──────────────────────────────────────────────────────┐
+│                                                                              │
+│  Use when:                                                                   │
+│    • Customer didn't receive original email                                  │
+│    • Temporary password expired (after 7 days)                               │
+│    • Customer lost/forgot temporary password                                 │
+│    • Customer never completed initial login                                  │
+│                                                                              │
+│  POST /customers/{customer_id}/resend-welcome                                │
+│                                                                              │
+│  ✅ Success (200 OK):                                                        │
+│     - New temporary password generated                                       │
+│     - New welcome email sent                                                 │
+│     - Password returned in response                                          │
+│                                                                              │
+│  ❌ Error (400 Bad Request):                                                 │
+│     - Customer already set their own password                                │
+│     - Cannot resend welcome email                                            │
+│     - Customer should use forgot password flow                               │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌─ CUSTOMER LIFECYCLE ────────────────────────────────────────────────────────┐
+│                                                                              │
+│  1. CREATION                                                                 │
+│     Admin: POST /customers                                                   │
+│     System: Sends welcome email with temp password                           │
+│                                                                              │
+│  2. FIRST LOGIN                                                              │
+│     Customer: POST /auth/login (with temp password)                          │
+│     Customer: POST /auth/complete-new-password                               │
+│     Status: CONFIRMED ✅                                                     │
+│                                                                              │
+│  3. IF EMAIL NOT RECEIVED                                                    │
+│     Admin: POST /customers/{id}/resend-welcome                               │
+│     System: Sends new email with new temp password                           │
+│                                                                              │
+│  4. AFTER PASSWORD SET                                                       │
+│     Customer: Use standard forgot password flow                              │
+│     Endpoint: POST /auth/forgot-password                                     │
+│     Endpoint: POST /auth/reset-password                                      │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌─ EMAIL TEMPLATE INCLUDES ───────────────────────────────────────────────────┐
+│                                                                              │
+│  • Hovver branding and logo area                                             │
+│  • Personalized greeting with customer name                                  │
+│  • Welcome message and account details                                       │
+│  • Temporary password (clearly highlighted)                                  │
+│  • Login URL: https://samwylock.com                                          │
+│  • Security note about changing password                                     │
+│  • Contact information for support                                           │
+│  • Professional footer                                                       │
+│  • Responsive HTML design                                                    │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌─ TESTING IN POSTMAN ────────────────────────────────────────────────────────┐
+│                                                                              │
+│  Collection: Hovver-Admin-Dashboard.postman_collection.json                  │
+│                                                                              │
+│  Test Welcome Email:                                                         │
+│    1. Login as admin                                                         │
+│    2. Run: Customer Management > Create Customer                             │
+│    3. Check: Email received at customer address                              │
+│    4. Verify: Temporary password matches response                            │
+│                                                                              │
+│  Test Resend Email:                                                          │
+│    1. Create customer (save customer_id)                                     │
+│    2. Run: Customer Management > Resend Welcome Email                        │
+│    3. Check: New email received                                              │
+│    4. Verify: New password in response                                       │
+│                                                                              │
+│  Test Restriction:                                                           │
+│    1. Create customer                                                        │
+│    2. Customer logs in and changes password                                  │
+│    3. Try to resend welcome email                                            │
+│    4. Expect: 400 error with clear message                                   │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌─ ERROR HANDLING ────────────────────────────────────────────────────────────┐
+│                                                                              │
+│  Email Delivery Failure:                                                     │
+│    • Customer still created successfully                                     │
+│    • Temporary password in API response                                      │
+│    • Admin can resend using resend endpoint                                  │
+│    • Error logged but doesn't fail operation                                 │
+│                                                                              │
+│  Cannot Resend (400):                                                        │
+│    • Customer status: CONFIRMED                                              │
+│    • Already set their own password                                          │
+│    • Use forgot password flow instead                                        │
+│                                                                              │
+│  Not Found (404):                                                            │
+│    • Customer ID doesn't exist                                               │
+│    • Check customer_id variable                                              │
+│                                                                              │
+│  Unauthorized (401/403):                                                     │
+│    • Must be logged in as admin                                              │
+│    • Check access token                                                      │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌─ VERIFICATION STATUS ───────────────────────────────────────────────────────┐
+│                                                                              │
+│  Check SES Status:                                                           │
+│    python check_ses_verification.py                                          │
+│                                                                              │
+│  Expected:                                                                   │
+│    Account: 052869941234                                                     │
+│    Domain Verification: Success                                              │
+│    DKIM Verification: Success                                                │
+│                                                                              │
+│  ✅ All systems ready for email delivery!                                    │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌─ FILES & DOCUMENTATION ─────────────────────────────────────────────────────┐
+│                                                                              │
+│  Postman:    Hovver-Admin-Dashboard.postman_collection.json                  │
+│  API Code:   api/services/email.py                                           │
+│  Auth:       api/services/auth.py                                            │
+│  Routes:     api/routers/customers.py                                        │
+│  Config:     config.py (SES settings)                                        │
+│  Docs:       POSTMAN_EMAIL_UPDATE.txt                                        │
+│  Status:     SES_MIGRATION_COMPLETE.txt                                      │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+Remember: Welcome emails are automatic! Just create a customer and the email is sent.
+No additional configuration needed - it just works! ✨

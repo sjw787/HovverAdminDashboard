@@ -1,0 +1,118 @@
+DNS RECORD CONFLICT RESOLVED + ACCOUNT MIGRATION NEEDED
+========================================================
+Date: January 17, 2026
+Time: 12:30 PM EST (Updated 1:00 PM EST)
+
+🚀 QUICK START: Run .\migrate-ses-complete.ps1 to fix the account issue!
+📖 Full Guide: SES_MIGRATION_QUICKSTART.txt
+📋 Detailed Steps: SES_ACCOUNT_MIGRATION_GUIDE.txt
+
+ISSUE #1: DNS RECORD CONFLICT
+------------------------------
+SES showed a domain verification error:
+"The DNS record was found, but the value is not what's expected."
+
+ROOT CAUSE
+----------
+There were duplicate/conflicting DKIM records in Route53:
+
+OLD DKIM Records (from previous SES verification attempt):
+- 2sczphe2suitnmzlqqc2zqgin2sqopvb._domainkey.samwylock.com
+- 7ixpjfcskmkvwv2jitsgefswvr3p52zo._domainkey.samwylock.com
+- ajie2vdmp74istf3ti5bqf7gi7e5rgxd._domainkey.samwylock.com
+
+NEW DKIM Records (from current SES setup):
+- 3p3rxsm7w2yu6w65stu4nzaw62hgcqpj._domainkey.samwylock.com
+- lv5mdhfy5b6cjpp3mzrpo7whjhwe5ody._domainkey.samwylock.com
+- sqlqmdwg5nb3ydif5fdbmf7uhwvcjxve._domainkey.samwylock.com
+
+The presence of 6 total DKIM records (instead of 3) was causing SES to find
+unexpected values, resulting in the verification error.
+
+RESOLUTION FOR ISSUE #1
+-----------------------
+1. Identified the conflicting old DKIM records in Route53
+2. Deleted the 3 old DKIM records from Route53 (admin-legacy account)
+3. Verified that only the current SES DKIM tokens remain in DNS
+
+✅ DNS Record Conflict: RESOLVED
+
+
+ISSUE #2: WRONG AWS ACCOUNT
+----------------------------
+SES was configured in the WRONG AWS account:
+- Current SES account: 777653593792 (iamadmin-general) ❌
+- Correct account: 052869941234 (iamadmin-dev) ✅
+
+The infrastructure (Cognito, S3, ECS) is in iamadmin-dev,
+so SES must also be there for proper integration.
+
+RESOLUTION FOR ISSUE #2 (IN PROGRESS)
+--------------------------------------
+STATUS: Migration required - follow these steps:
+
+1. ✅ Identified the wrong account (777653593792)
+2. ⏳ Delete SES from iamadmin-general (777653593792):
+   python migrate_ses_account.py
+
+3. ⏳ Switch AWS credentials to iamadmin-dev (052869941234):
+   Run: .\check-aws-account.ps1
+   Follow the instructions to switch accounts
+
+4. ⏳ Setup SES in iamadmin-dev account:
+   python migrate_ses_account.py --setup-only
+
+5. ⏳ Update DNS records if DKIM tokens changed:
+   .\setup_dns.ps1 -Domain "samwylock.com" -Route53
+
+6. ⏳ Verify domain and DKIM:
+   python setup_ses.py --check-status samwylock.com
+
+DETAILED MIGRATION GUIDE
+-------------------------
+See: SES_ACCOUNT_MIGRATION_GUIDE.txt
+
+
+CURRENT STATUS (DNS)
+--------------------
+✅ Domain Verification: Success (in wrong account)
+✅ DKIM Verification: Success (in wrong account)
+✅ DKIM Enabled: True (in wrong account)
+✅ DNS Records: Clean (5 records total in Route53)
+
+DNS RECORDS NOW IN ROUTE53
+---------------------------
+1. _amazonses.samwylock.com (TXT) - Domain verification
+2. 3p3rxsm7w2yu6w65stu4nzaw62hgcqpj._domainkey.samwylock.com (CNAME)
+3. lv5mdhfy5b6cjpp3mzrpo7whjhwe5ody._domainkey.samwylock.com (CNAME)
+4. sqlqmdwg5nb3ydif5fdbmf7uhwvcjxve._domainkey.samwylock.com (CNAME)
+5. _dmarc.samwylock.com (TXT) - DMARC policy
+
+Plus SPF record at root domain (samwylock.com)
+
+VERIFICATION COMMAND
+--------------------
+To check status anytime:
+  .\verify-ses-status.ps1
+
+Or using AWS CLI:
+  aws ses get-identity-verification-attributes --identities samwylock.com --region us-east-1
+  aws ses get-identity-dkim-attributes --identities samwylock.com --region us-east-1
+
+NEXT STEPS
+----------
+The domain is now fully verified and ready to send emails through SES.
+You can proceed with configuring Cognito to use custom emails from @samwylock.com
+
+To configure Cognito:
+1. Go to Cognito User Pool settings
+2. Update "Email configuration" to use SES
+3. Set FROM email address (e.g., noreply@samwylock.com)
+4. Test customer creation and welcome email
+
+LESSONS LEARNED
+---------------
+- Always check for existing DNS records before adding new ones
+- When re-verifying a domain in SES, old DKIM tokens should be cleaned up
+- SES requires exactly 3 DKIM records - no more, no less
+- Use UPSERT action in Route53 to avoid duplicates (our script already does this)

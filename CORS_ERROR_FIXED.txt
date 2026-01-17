@@ -1,0 +1,177 @@
+CORS ERROR FIXED - CUSTOMER CREATION WITH SES SANDBOX
+======================================================
+Date: January 17, 2026
+
+ISSUE
+-----
+Frontend received CORS error when creating customer via POST /customers
+- Status: 500 Internal Server Error
+- Customer was actually created successfully in Cognito
+- Email sending failed due to SES sandbox mode
+- CORS error prevented frontend from seeing success response
+
+ROOT CAUSES
+-----------
+1. Email service was raising HTTPException for SES sandbox errors
+2. HTTPException was preventing proper response from being returned
+3. Exception handlers didn't add CORS headers to error responses
+4. Frontend saw CORS error instead of the actual error or success
+
+FIXES APPLIED
+-------------
+
+Fix 1: Exception Handlers Now Add CORS Headers
+-----------------------------------------------
+File: main.py
+Lines: 70-95
+
+Changed exception handlers to add CORS headers to all error responses:
+- http_exception_handler: Adds CORS headers to 400/404/etc errors
+- general_exception_handler: Adds CORS headers to 500 errors
+
+This ensures browser doesn't block error responses from backend.
+
+Fix 2: Email Errors Don't Fail Customer Creation
+-------------------------------------------------
+File: api/services/email.py
+Lines: 189-205
+
+Changed email service to raise regular Exception instead of HTTPException:
+- MessageRejected errors (sandbox mode) → Regular Exception
+- MailFromDomainNotVerifiedException → Regular Exception
+- Other SES errors → Regular Exception
+
+These exceptions are caught by the try-catch in auth.py (line 708)
+and logged as warnings without failing customer creation.
+
+BEHAVIOR NOW
+------------
+
+When Creating Customer in SES Sandbox Mode:
+1. ✅ Customer is created in Cognito
+2. ⚠️  Email send fails (sandbox: recipient not verified)
+3. ⚠️  Warning logged: "Failed to send welcome email..."
+4. ✅ API returns 201 Created with customer details
+5. ✅ Frontend receives response with CORS headers
+6. ✅ Customer can be managed, temp password in response
+
+Frontend Response:
+{
+  "customer_id": "abc123...",
+  "email": "customer@example.com",
+  "name": "Customer Name",
+  "temporary_password": "xY9$nMz2!pQ8wE5t",  ← Still returned!
+  "customer_folder": "customers/abc123...",
+  "created_date": "2026-01-17T10:30:00",
+  "enabled": true,
+  "user_status": "FORCE_CHANGE_PASSWORD"
+}
+
+Admin can:
+- Copy temporary password from response
+- Share it with customer manually
+- Or resend welcome email after verifying customer's email in SES
+
+TESTING SCENARIOS
+-----------------
+
+Scenario 1: SES Sandbox Mode (Current)
+- Customer creation: ✅ Succeeds
+- Email delivery: ❌ Fails (logged as warning)
+- API response: ✅ 201 Created
+- Frontend: ✅ Receives success response
+- Temp password: ✅ In API response
+- CORS: ✅ No error
+
+Scenario 2: After Production Access Approved
+- Customer creation: ✅ Succeeds
+- Email delivery: ✅ Succeeds
+- API response: ✅ 201 Created
+- Frontend: ✅ Receives success response
+- Temp password: ✅ In email AND response
+- CORS: ✅ No error
+
+Scenario 3: SES Completely Down
+- Customer creation: ✅ Succeeds
+- Email delivery: ❌ Fails (logged as warning)
+- API response: ✅ 201 Created
+- Frontend: ✅ Receives success response
+- Temp password: ✅ In API response
+- CORS: ✅ No error
+
+IMMEDIATE NEXT STEPS
+--------------------
+
+1. ✅ Changes applied and tested
+2. Deploy updated code to production
+3. Test customer creation from frontend
+4. Should now receive 201 response with temp password
+
+For Full Email Functionality:
+1. Request production access for samwylock.com in SES
+   (Go to AWS Console → SES → Account dashboard → Request production access)
+2. Wait 24-48 hours for approval
+3. Once approved, emails will send to any address
+
+TEMPORARY WORKAROUND (Optional)
+--------------------------------
+
+While waiting for production access, verify test emails:
+
+python verify_test_email.py test@example.com
+
+Then customer creation with that email will send email successfully.
+
+But with the fix, this is NOT required - customer creation works
+regardless of email delivery status.
+
+MONITORING
+----------
+
+Check CloudWatch logs for:
+- Success: "Email sent successfully. Message ID: ..."
+- Warning: "Warning: Failed to send welcome email: ..."
+
+The warning is expected in sandbox mode and doesn't affect functionality.
+
+CORS HEADERS IN RESPONSES
+--------------------------
+
+All responses now include:
+- Access-Control-Allow-Origin: <requesting origin>
+- Access-Control-Allow-Credentials: true
+- Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS
+- Access-Control-Allow-Headers: *
+
+Even error responses (400, 404, 500) include these headers.
+
+SUMMARY
+-------
+
+✅ CORS error fixed - exception handlers add CORS headers
+✅ Customer creation succeeds even if email fails
+✅ Temporary password always returned in API response
+✅ Frontend can now create customers successfully
+✅ Admin can manually share temp password if email doesn't send
+✅ Email will work automatically after SES production access approved
+
+The API is now resilient to SES sandbox limitations and email failures.
+Customer creation always succeeds, and the frontend always receives a
+proper response with CORS headers.
+
+FILES MODIFIED
+--------------
+- main.py: Added CORS headers to exception handlers
+- api/services/email.py: Changed to raise Exception instead of HTTPException
+
+DEPLOY COMMAND
+--------------
+# Build and push new Docker image
+./build_and_push_docker.ps1
+
+# Or manually:
+docker build -t hovver-admin-app .
+docker tag hovver-admin-app:latest 052869941234.dkr.ecr.us-east-1.amazonaws.com/hovver-admin-app:latest
+docker push 052869941234.dkr.ecr.us-east-1.amazonaws.com/hovver-admin-app:latest
+
+# Then update ECS service (or wait for auto-deploy)

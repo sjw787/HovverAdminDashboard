@@ -1,0 +1,351 @@
+CUSTOMER FILES FILTER NOT WORKING - FRONTEND ISSUE
+==================================================
+Date: January 17, 2026
+
+REPORTED ISSUE
+--------------
+When clicking "View Customer Files" from the customer card screen:
+- Dropdown shows "customer" selected ✅
+- Gallery shows ALL files instead of just that customer's files ❌
+- Filter is not actually being applied ❌
+
+ROOT CAUSE
+----------
+This is a FRONTEND issue. The backend API supports filtering, but the
+frontend is not passing the correct query parameters.
+
+BACKEND API - HOW IT WORKS
+---------------------------
+
+Endpoint: GET /images/list
+
+Query Parameters:
+- prefix: (string) Path prefix to filter results
+- max_keys: (int) Maximum number of images (default: 100)
+
+Examples:
+
+1. Get ALL files:
+   GET /images/list
+
+2. Get files for specific customer:
+   GET /images/list?prefix=customers/abc123-def456-789/
+
+3. Get general use files:
+   GET /images/list?prefix=general/
+
+4. Get files in subfolder:
+   GET /images/list?prefix=customers/abc123-def456-789/portraits/
+
+CUSTOMER FOLDER STRUCTURE
+--------------------------
+S3 bucket: hovver-images-dev
+
+Folder structure:
+├── general/                          ← General use files
+│   ├── image1.jpg
+│   └── image2.png
+├── customers/
+│   ├── {customer_id_1}/              ← Customer 1's folder
+│   │   ├── photo1.jpg
+│   │   └── photo2.jpg
+│   ├── {customer_id_2}/              ← Customer 2's folder
+│   │   ├── photo3.jpg
+│   │   └── photo4.jpg
+│   └── ...
+
+Key Format:
+- General: "general/filename.jpg"
+- Customer: "customers/{customer_id}/filename.jpg"
+
+FRONTEND FIX REQUIRED
+---------------------
+
+Issue: Frontend is not passing the prefix parameter
+
+Current behavior (WRONG):
+```javascript
+// When "View Customer Files" is clicked
+fetchImages() // No prefix parameter!
+// Result: Shows ALL files
+```
+
+Correct behavior (FIX):
+```javascript
+// When "View Customer Files" is clicked for customer with ID "abc123..."
+fetchImages({ prefix: `customers/${customerId}/` })
+// Result: Shows only that customer's files
+```
+
+FRONTEND IMPLEMENTATION GUIDE
+------------------------------
+
+Step 1: Update API Call Function
+---------------------------------
+```javascript
+// In your images API service file
+
+async function fetchImages(filters = {}) {
+  const params = new URLSearchParams();
+
+  if (filters.prefix) {
+    params.append('prefix', filters.prefix);
+  }
+
+  if (filters.maxKeys) {
+    params.append('max_keys', filters.maxKeys);
+  }
+
+  const response = await fetch(
+    `${API_BASE_URL}/images/list?${params.toString()}`,
+    {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
+    }
+  );
+
+  return response.json();
+}
+```
+
+Step 2: Call with Correct Prefix
+---------------------------------
+```javascript
+// When "View Customer Files" button is clicked
+
+function viewCustomerFiles(customerId) {
+  // Set filter in state/context
+  setCurrentFilter({
+    type: 'customer',
+    customerId: customerId,
+    prefix: `customers/${customerId}/`
+  });
+
+  // Fetch filtered images
+  fetchImages({
+    prefix: `customers/${customerId}/`
+  }).then(data => {
+    setImages(data.images);
+  });
+
+  // Navigate to gallery view
+  navigate('/images');
+}
+```
+
+Step 3: Update Filter Dropdown Handler
+---------------------------------------
+```javascript
+// When filter dropdown value changes
+
+function handleFilterChange(filterType, customerId = null) {
+  let prefix = '';
+
+  switch(filterType) {
+    case 'all':
+      prefix = '';  // No prefix = all files
+      break;
+    case 'general':
+      prefix = 'general/';
+      break;
+    case 'customer':
+      if (customerId) {
+        prefix = `customers/${customerId}/`;
+      }
+      break;
+    default:
+      prefix = '';
+  }
+
+  // Update filter state
+  setCurrentFilter({ type: filterType, customerId, prefix });
+
+  // Fetch with new filter
+  fetchImages({ prefix }).then(data => {
+    setImages(data.images);
+  });
+}
+```
+
+Step 4: Initialize Filter on Page Load
+---------------------------------------
+```javascript
+// In gallery component
+
+useEffect(() => {
+  // Check if customer filter is in URL params or state
+  const urlParams = new URLSearchParams(window.location.search);
+  const customerId = urlParams.get('customer_id');
+
+  if (customerId) {
+    // Load customer's files
+    handleFilterChange('customer', customerId);
+  } else {
+    // Load all files
+    fetchImages();
+  }
+}, []);
+```
+
+TESTING THE FIX
+---------------
+
+Test Case 1: View All Files
+URL: /images
+API Call: GET /images/list
+Expected: Shows all files (general + all customers)
+
+Test Case 2: View Customer Files
+URL: /images?customer_id=abc123-def456-789
+API Call: GET /images/list?prefix=customers/abc123-def456-789/
+Expected: Shows only that customer's files
+
+Test Case 3: View General Files
+URL: /images?filter=general
+API Call: GET /images/list?prefix=general/
+Expected: Shows only general use files
+
+Test Case 4: Change Filter in Dropdown
+Action: Select different customer from dropdown
+API Call: GET /images/list?prefix=customers/{new_customer_id}/
+Expected: Gallery updates to show new customer's files
+
+DEBUGGING
+---------
+
+Check Browser Network Tab:
+1. Open DevTools (F12)
+2. Go to Network tab
+3. Click "View Customer Files"
+4. Look for request to /images/list
+5. Check if prefix parameter is included:
+   - ❌ Wrong: /images/list (no prefix)
+   - ✅ Correct: /images/list?prefix=customers/abc123.../
+
+Check Console Logs:
+```javascript
+// Add logging to your fetch function
+console.log('Fetching images with prefix:', filters.prefix);
+console.log('API URL:', url);
+```
+
+BACKEND RESPONSE FORMAT
+------------------------
+
+Response always includes:
+{
+  "count": 5,
+  "images": [
+    {
+      "key": "customers/abc123.../photo1.jpg",
+      "url": "https://...",  // Presigned URL
+      "last_modified": "2026-01-17T10:30:00",
+      "size": 1024567,
+      "customer_id": "abc123...",  // Only for customer files
+      "folder_type": "customer"     // Or "general"
+    },
+    ...
+  ]
+}
+
+CUSTOMER DATA STRUCTURE
+-----------------------
+
+From GET /customers/{id}:
+{
+  "customer_id": "abc123-def456-789",
+  "email": "customer@example.com",
+  "name": "Customer Name",
+  "customer_folder": "customers/abc123-def456-789",  ← Use this!
+  ...
+}
+
+The customer_folder field gives you the exact prefix to use!
+
+RECOMMENDED IMPLEMENTATION
+--------------------------
+
+```javascript
+// Get customer data
+const customer = await fetchCustomer(customerId);
+
+// Use customer_folder as prefix
+const prefix = customer.customer_folder + '/';
+// Result: "customers/abc123-def456-789/"
+
+// Fetch filtered images
+const images = await fetchImages({ prefix });
+```
+
+This ensures the prefix always matches the actual folder structure!
+
+COMMON MISTAKES TO AVOID
+-------------------------
+
+❌ Wrong: prefix = `customer/${customerId}/`
+   (Missing 's' - should be 'customers')
+
+❌ Wrong: prefix = `customers/${customerId}`
+   (Missing trailing slash)
+
+✅ Correct: prefix = `customers/${customerId}/`
+
+❌ Wrong: Filtering on frontend after fetching all images
+   (Wastes bandwidth, slower)
+
+✅ Correct: Pass prefix to API, let backend filter
+   (Efficient, faster)
+
+FRONTEND STATE MANAGEMENT
+--------------------------
+
+Keep track of current filter:
+```javascript
+const [imageFilter, setImageFilter] = useState({
+  type: 'all',        // 'all', 'customer', 'general'
+  customerId: null,   // Set when type is 'customer'
+  prefix: ''          // S3 prefix for API call
+});
+```
+
+Update on navigation:
+- From customer card → Set filter to that customer
+- From navbar → Set filter to 'all'
+- From dropdown → Set filter based on selection
+
+POSTMAN TESTING
+---------------
+
+Test the backend endpoints in Postman:
+
+1. All files:
+   GET {{base_url}}/images/list
+   Headers: Authorization: Bearer {{access_token}}
+
+2. Customer files:
+   GET {{base_url}}/images/list?prefix=customers/abc123.../
+   Headers: Authorization: Bearer {{access_token}}
+
+3. General files:
+   GET {{base_url}}/images/list?prefix=general/
+   Headers: Authorization: Bearer {{access_token}}
+
+Verify each returns the expected subset of images.
+
+SUMMARY
+-------
+
+Backend: ✅ Working correctly - supports prefix filtering
+Frontend: ❌ Not passing prefix parameter - needs to be fixed
+
+Fix: Update frontend to pass prefix query parameter when filtering
+
+Quick Fix:
+When "View Customer Files" is clicked, call:
+  fetchImages({ prefix: `customers/${customerId}/` })
+
+Instead of:
+  fetchImages()  // Wrong - no filter!
+
+The backend is ready - frontend just needs to use the prefix parameter! 🎯

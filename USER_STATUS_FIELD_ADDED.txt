@@ -1,0 +1,335 @@
+USER_STATUS FIELD ADDED TO CUSTOMER RESPONSES
+==============================================
+Date: January 17, 2026
+
+SUMMARY
+-------
+✅ Added user_status field to customer responses
+✅ Frontend can now determine when to show "Resend Welcome Email" button
+✅ Models updated in both code and Postman collection
+
+CHANGES MADE
+------------
+
+1. api/services/auth.py - get_customer() method (Line ~832)
+   Added: "user_status": user.get('UserStatus', 'UNKNOWN')
+
+2. api/services/auth.py - list_customers() method (Line ~783)
+   Added: "user_status": user.get('UserStatus', 'UNKNOWN')
+
+3. api/models/__init__.py - CustomerProfileResponse (Line ~83)
+   Added: user_status: str = Field(..., description="Cognito user status...")
+
+4. Hovver-Admin-Dashboard.postman_collection.json
+   Updated: Get Customer by ID endpoint description
+
+RESPONSE STRUCTURE
+------------------
+
+GET /customers/{customer_id}
+{
+  "customer_id": "abc123-def456-...",
+  "email": "customer@example.com",
+  "name": "John Doe",
+  "phone_number": "+12025551234",
+  "customer_folder": "customers/abc123-def456-...",
+  "created_date": "2026-01-15T10:30:00",
+  "enabled": true,
+  "user_status": "FORCE_CHANGE_PASSWORD"  ← NEW FIELD
+}
+
+GET /customers (list all)
+{
+  "count": 10,
+  "customers": [
+    {
+      "customer_id": "...",
+      "email": "...",
+      "name": "...",
+      "phone_number": "...",
+      "customer_folder": "...",
+      "created_date": "...",
+      "enabled": true,
+      "user_status": "FORCE_CHANGE_PASSWORD"  ← NEW FIELD
+    },
+    ...
+  ]
+}
+
+USER_STATUS VALUES
+------------------
+
+✅ FORCE_CHANGE_PASSWORD
+   - Customer has temporary password
+   - Has not logged in yet OR logged in but didn't complete password change
+   - Frontend: SHOW "Resend Welcome Email" button
+   - Action: Can call POST /customers/{id}/resend-welcome
+
+✅ RESET_REQUIRED
+   - Password reset was required by admin
+   - Frontend: SHOW "Resend Welcome Email" button
+   - Action: Can call POST /customers/{id}/resend-welcome
+
+❌ CONFIRMED
+   - Customer has completed initial login and set their own password
+   - Frontend: HIDE "Resend Welcome Email" button
+   - Action: Cannot resend, must use forgot password flow
+
+❌ UNCONFIRMED
+   - User account is unconfirmed (shouldn't happen in our flow)
+   - Frontend: HIDE "Resend Welcome Email" button
+
+❌ ARCHIVED
+   - User account is archived
+   - Frontend: HIDE "Resend Welcome Email" button
+
+❌ COMPROMISED
+   - User account is compromised
+   - Frontend: HIDE "Resend Welcome Email" button
+
+❌ UNKNOWN
+   - Status could not be determined
+   - Frontend: HIDE "Resend Welcome Email" button
+
+FRONTEND IMPLEMENTATION GUIDE
+------------------------------
+
+React/Vue/Angular Example:
+
+```javascript
+// Fetch customer details
+const customer = await fetchCustomer(customerId);
+
+// Determine if resend button should be shown
+const canResendWelcomeEmail =
+  customer.user_status === 'FORCE_CHANGE_PASSWORD' ||
+  customer.user_status === 'RESET_REQUIRED';
+
+// Render button conditionally
+{canResendWelcomeEmail && (
+  <button onClick={handleResendWelcomeEmail}>
+    Resend Welcome Email
+  </button>
+)}
+
+// Show status badge
+const getStatusBadge = (status) => {
+  switch(status) {
+    case 'FORCE_CHANGE_PASSWORD':
+      return <Badge color="warning">Pending Initial Login</Badge>;
+    case 'CONFIRMED':
+      return <Badge color="success">Active</Badge>;
+    case 'RESET_REQUIRED':
+      return <Badge color="warning">Reset Required</Badge>;
+    default:
+      return <Badge color="gray">{status}</Badge>;
+  }
+};
+```
+
+FRONTEND LOGIC FLOW
+-------------------
+
+1. Customer List View
+   ┌─────────────────────────────────────────┐
+   │ Name          Email          Status     │
+   │───────────────────────────────────────  │
+   │ John Doe      john@...  [Pending Login] │ ← Show resend button
+   │ Jane Smith    jane@...  [Active]        │ ← Hide resend button
+   │ Bob Wilson    bob@...   [Pending Login] │ ← Show resend button
+   └─────────────────────────────────────────┘
+
+2. Customer Detail View
+   ┌─────────────────────────────────────────┐
+   │ Customer: John Doe                      │
+   │ Status: FORCE_CHANGE_PASSWORD           │
+   │                                         │
+   │ This customer hasn't completed their    │
+   │ initial login yet.                      │
+   │                                         │
+   │ [Resend Welcome Email]  [Edit Profile]  │
+   └─────────────────────────────────────────┘
+
+3. After Resend
+   ┌─────────────────────────────────────────┐
+   │ ✅ Welcome Email Resent!                │
+   │                                         │
+   │ A new temporary password has been sent  │
+   │ to john@example.com                     │
+   │                                         │
+   │ Temporary Password: xY9$nMz2!pQ8wE5t    │
+   │ (Copy to share with customer)           │
+   └─────────────────────────────────────────┘
+
+4. Status: CONFIRMED
+   ┌─────────────────────────────────────────┐
+   │ Customer: Jane Smith                    │
+   │ Status: CONFIRMED (Active)              │
+   │                                         │
+   │ This customer has completed their       │
+   │ initial setup.                          │
+   │                                         │
+   │ [Edit Profile]  [Disable Account]       │
+   │                                         │
+   │ Note: If customer needs password reset, │
+   │ they should use the "Forgot Password"   │
+   │ feature on the login page.              │
+   └─────────────────────────────────────────┘
+
+BUTTON VISIBILITY LOGIC
+------------------------
+
+Show "Resend Welcome Email" button when:
+- user_status === 'FORCE_CHANGE_PASSWORD' OR
+- user_status === 'RESET_REQUIRED'
+
+Hide "Resend Welcome Email" button when:
+- user_status === 'CONFIRMED' OR
+- user_status === any other value
+
+ADDITIONAL UI CONSIDERATIONS
+-----------------------------
+
+1. Status Badge Colors
+   - FORCE_CHANGE_PASSWORD: Yellow/Warning (⚠️ Pending Initial Login)
+   - CONFIRMED: Green/Success (✅ Active)
+   - RESET_REQUIRED: Orange/Warning (⚠️ Reset Required)
+   - ARCHIVED: Gray (🗄️ Archived)
+   - COMPROMISED: Red/Danger (⛔ Compromised)
+
+2. Tooltips
+   - FORCE_CHANGE_PASSWORD: "Customer has not completed initial login"
+   - CONFIRMED: "Customer account is active"
+   - RESET_REQUIRED: "Password reset required by administrator"
+
+3. Action Menus
+   - FORCE_CHANGE_PASSWORD:
+     • Resend Welcome Email
+     • Edit Profile
+     • Disable Account
+
+   - CONFIRMED:
+     • Edit Profile
+     • Disable Account
+     • View Activity (future feature)
+
+4. Bulk Actions
+   - Filter customers by status
+   - Select multiple with FORCE_CHANGE_PASSWORD status
+   - Bulk resend welcome emails
+
+ERROR HANDLING
+--------------
+
+If resend button is clicked but user_status changed to CONFIRMED:
+
+Frontend receives 400 error:
+{
+  "detail": "Cannot resend welcome email. Customer has already set
+             their own password. Use the forgot password flow instead."
+}
+
+Show error message:
+"This customer has already completed their initial setup.
+ They should use the 'Forgot Password' feature if they need
+ to reset their password."
+
+Then refresh customer data to update UI.
+
+TESTING CHECKLIST
+-----------------
+
+✅ GET /customers returns user_status for each customer
+✅ GET /customers/{id} returns user_status
+✅ user_status reflects actual Cognito status
+✅ Frontend shows/hides resend button based on status
+✅ Resend button works when status allows it
+✅ Resend button hidden when status is CONFIRMED
+✅ Status badge displays correctly
+✅ Error handling when status changes between fetch and action
+
+API EXAMPLES
+------------
+
+Example 1: New Customer (Can Resend)
+GET /customers/abc123-def456-789
+Response:
+{
+  "customer_id": "abc123-def456-789",
+  "email": "newcustomer@example.com",
+  "name": "New Customer",
+  "user_status": "FORCE_CHANGE_PASSWORD",  ← Can resend
+  ...
+}
+Action: Show "Resend Welcome Email" button
+
+Example 2: Active Customer (Cannot Resend)
+GET /customers/xyz789-uvw456-123
+Response:
+{
+  "customer_id": "xyz789-uvw456-123",
+  "email": "active@example.com",
+  "name": "Active Customer",
+  "user_status": "CONFIRMED",  ← Cannot resend
+  ...
+}
+Action: Hide "Resend Welcome Email" button
+
+POSTMAN TESTING
+---------------
+
+1. Create a new customer
+   POST /customers
+   → Note the customer_id and user_status (should be FORCE_CHANGE_PASSWORD)
+
+2. Get customer details
+   GET /customers/{customer_id}
+   → Verify user_status: "FORCE_CHANGE_PASSWORD"
+   → This means resend button should be shown
+
+3. Resend welcome email
+   POST /customers/{customer_id}/resend-welcome
+   → Should return 200 OK
+
+4. Have customer complete login
+   → User status changes to CONFIRMED
+
+5. Get customer details again
+   GET /customers/{customer_id}
+   → Verify user_status: "CONFIRMED"
+   → This means resend button should be hidden
+
+6. Try to resend welcome email
+   POST /customers/{customer_id}/resend-welcome
+   → Should return 400 Bad Request
+   → Frontend should hide button to prevent this
+
+MIGRATION NOTES
+---------------
+
+Existing API clients:
+- user_status is a NEW required field in responses
+- If using TypeScript/typed clients, update interfaces
+- If parsing JSON manually, handle the new field
+- Default value 'UNKNOWN' ensures backwards compatibility
+
+Database/Cache:
+- No database changes needed (Cognito is source of truth)
+- Clear any cached customer objects
+- Refresh customer list after deploy
+
+RELATED FILES
+-------------
+- api/services/auth.py - Implementation
+- api/models/__init__.py - Response models
+- Hovver-Admin-Dashboard.postman_collection.json - API tests
+- This documentation file
+
+SUMMARY
+-------
+The user_status field is now available in all customer API responses.
+Frontend can use this field to determine UI state, particularly whether
+to show the "Resend Welcome Email" button. The field accurately reflects
+the customer's account status in AWS Cognito.
+
+✅ IMPLEMENTATION COMPLETE

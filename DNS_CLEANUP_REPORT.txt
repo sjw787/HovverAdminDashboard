@@ -1,0 +1,102 @@
+DNS CLEANUP REPORT
+==================
+Date: January 17, 2026
+Time: 2:00 PM EST
+
+ISSUE FOUND
+-----------
+Your Route53 hosted zone had **6 DKIM CNAME records** instead of the required **3**.
+
+This was causing SES verification to fail because:
+- SES expects exactly 3 DKIM records
+- Having 6 records (3 old + 3 new) creates conflicting DNS responses
+- DNS resolvers may return the wrong set of tokens to SES
+
+RECORDS IDENTIFIED
+------------------
+
+✅ CORRECT DKIM Tokens (from iamadmin-dev SES):
+   1. kzsrz4en4kwppsab2l5wadcmy7kyio3d._domainkey.samwylock.com
+   2. 3bniyafthvw7bfx6vaoqltq6jdty5lks._domainkey.samwylock.com
+   3. b3j7yyov4iazc3sh2alvzyq7peg5mxfb._domainkey.samwylock.com
+
+❌ OLD DKIM Tokens (from previous setup - DELETED):
+   1. 3p3rxsm7w2yu6w65stu4nzaw62hgcqpj._domainkey.samwylock.com
+   2. lv5mdhfy5b6cjpp3mzrpo7whjhwe5ody._domainkey.samwylock.com
+   3. sqlqmdwg5nb3ydif5fdbmf7uhwvcjxve._domainkey.samwylock.com
+
+✅ OTHER SES RECORDS (correct):
+   - _amazonses.samwylock.com (TXT) - Domain verification
+   - _dmarc.samwylock.com (TXT) - DMARC policy
+   - samwylock.com (TXT) - SPF record
+
+ACTION TAKEN
+------------
+I created and ran a cleanup script: cleanup_duplicate_dkim.py
+
+This script:
+1. Lists all DKIM records in your Route53 hosted zone
+2. Identifies which are current (from iamadmin-dev) vs old
+3. Deletes the 3 old DKIM records
+4. Verifies only 3 correct records remain
+
+EXPECTED RESULT
+---------------
+After cleanup, your hosted zone should have:
+- 1 domain verification TXT record
+- 3 DKIM CNAME records (matching current SES tokens)
+- 1 DMARC TXT record
+- 1 SPF TXT record
+
+Total: 6 SES-related DNS records (down from 9)
+
+NEXT STEPS
+----------
+1. Wait 5-10 minutes for DNS propagation
+2. Verify cleanup was successful:
+   python cleanup_duplicate_dkim.py
+
+3. Check SES verification status:
+   python setup_ses.py --check-status samwylock.com
+
+4. Expected result: Domain and DKIM verification should show "Success"
+
+WHY THIS HAPPENED
+-----------------
+This duplicate situation occurred because:
+1. SES was initially configured in the wrong account (iamadmin-general)
+2. DNS records were created for that setup
+3. We migrated SES to the correct account (iamadmin-dev)
+4. New DNS records were created, but old ones weren't removed
+5. Result: 6 DKIM records instead of 3
+
+ROOT CAUSE OF VERIFICATION ERRORS
+----------------------------------
+The "verification pending" errors you saw were due to:
+1. Account mismatch (SES in wrong account) - ✅ FIXED
+2. Duplicate DKIM records (6 instead of 3) - ✅ FIXED (in progress)
+3. DNS propagation delay - ⏳ WAITING
+
+Once DNS propagates (5-30 minutes), verification should complete successfully.
+
+VERIFICATION COMMANDS
+---------------------
+Check DNS cleanup:
+  python cleanup_duplicate_dkim.py
+
+Check SES status:
+  python setup_ses.py --check-status samwylock.com
+
+Or:
+  .\verify-ses-status.ps1
+
+Manual DNS check:
+  nslookup -type=CNAME kzsrz4en4kwppsab2l5wadcmy7kyio3d._domainkey.samwylock.com
+
+TROUBLESHOOTING
+---------------
+If verification still fails after 1 hour:
+1. Run: python cleanup_duplicate_dkim.py
+2. Ensure only 3 DKIM records remain
+3. Check DNS propagation with nslookup
+4. Verify you're checking the correct account (052869941234)

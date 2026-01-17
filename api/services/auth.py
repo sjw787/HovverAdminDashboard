@@ -1,9 +1,9 @@
 """
 Authentication service using AWS Cognito.
 """
-import json
-from typing import Dict, Any
-from datetime import datetime, timedelta
+from typing import Dict, Any, List
+import secrets
+import string
 
 import boto3
 from botocore.exceptions import ClientError
@@ -14,6 +14,7 @@ from jose.utils import base64url_decode
 import requests
 
 from config import settings
+from api.services.email import email_service
 
 
 # HTTP Bearer token scheme
@@ -43,6 +44,43 @@ class CognitoAuth:
 
         # Cache for JWKS keys
         self._jwks: Dict[str, Any] | None = None
+
+    def _generate_temporary_password(self) -> str:
+        """
+        Generate a secure temporary password that meets Cognito requirements.
+
+        Requirements:
+        - Minimum 8 characters
+        - At least 1 uppercase letter
+        - At least 1 lowercase letter
+        - At least 1 number
+        - At least 1 special character
+
+        Returns:
+            A secure random password string
+        """
+        # Define character sets
+        uppercase = string.ascii_uppercase
+        lowercase = string.ascii_lowercase
+        digits = string.digits
+        special = "!@#$%^&*"
+
+        # Ensure at least one character from each required set
+        password = [
+            secrets.choice(uppercase),
+            secrets.choice(lowercase),
+            secrets.choice(digits),
+            secrets.choice(special),
+        ]
+
+        # Fill the rest with random characters from all sets
+        all_chars = uppercase + lowercase + digits + special
+        password.extend(secrets.choice(all_chars) for _ in range(12))  # Total 16 chars
+
+        # Shuffle to avoid predictable patterns
+        secrets.SystemRandom().shuffle(password)
+
+        return ''.join(password)
 
     def _get_jwks(self) -> Dict[str, Any]:
         """Get JSON Web Key Set from Cognito."""
@@ -569,6 +607,409 @@ class CognitoAuth:
                     detail=f"Failed to complete password challenge: {str(e)}"
                 )
 
+    def create_customer(
+        self,
+        email: str,
+        name: str,
+        phone_number: str | None = None
+    ) -> Dict[str, Any]:
+        """
+        Create a new customer user in Cognito.
+
+        Args:
+            email: Customer's email address (required)
+            name: Customer's full name
+            phone_number: Optional phone number in E.164 format (+1234567890)
+
+        Returns:
+            Dictionary with customer details including auto-generated temporary password
+
+        Raises:
+            HTTPException: If creation fails
+        """
+        try:
+            # Auto-generate a secure temporary password
+            temporary_password = self._generate_temporary_password()
+
+            # Validate phone number format if provided
+            if phone_number:
+                phone_number = phone_number.strip()
+                if not phone_number.startswith('+'):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Phone number must be in E.164 format (e.g., +1234567890)"
+                    )
+                # Basic validation for E.164 format
+                if not phone_number[1:].isdigit() or len(phone_number) < 8 or len(phone_number) > 16:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Invalid phone number format. Must be E.164 format with country code (e.g., +1234567890)"
+                    )
+
+            # Prepare user attributes
+            user_attributes = [
+                {"Name": "email", "Value": email},
+                {"Name": "email_verified", "Value": "true"},
+                {"Name": "name", "Value": name}
+            ]
+
+            if phone_number:
+                user_attributes.extend([
+                    {"Name": "phone_number", "Value": phone_number},
+                    {"Name": "phone_number_verified", "Value": "true"}
+                ])
+
+            # Create user
+            response = self.client.admin_create_user(
+                UserPoolId=self.user_pool_id,
+                Username=email,
+                UserAttributes=user_attributes,
+                TemporaryPassword=temporary_password,
+                MessageAction='SUPPRESS'  # Don't send Cognito email - we'll use SES
+            )
+
+            user = response['User']
+            customer_id = next(
+                (attr['Value'] for attr in user['Attributes'] if attr['Name'] == 'sub'),
+                None
+            )
+
+            # Set the customer_id custom attribute to match the sub
+            self.client.admin_update_user_attributes(
+                UserPoolId=self.user_pool_id,
+                Username=email,
+                UserAttributes=[
+                    {"Name": "custom:customer_id", "Value": customer_id}
+                ]
+            )
+
+            # Set password as permanent
+            self.client.admin_set_user_password(
+                UserPoolId=self.user_pool_id,
+                Username=email,
+                Password=temporary_password,
+                Permanent=False  # User must change on first login
+            )
+
+            # Add user to Customers group
+            self.client.admin_add_user_to_group(
+                UserPoolId=self.user_pool_id,
+                Username=email,
+                GroupName='Customers'
+            )
+
+            # Send welcome email via SES
+            try:
+                email_service.send_welcome_email(
+                    recipient_email=email,
+                    recipient_name=name,
+                    temporary_password=temporary_password
+                )
+            except Exception as email_error:
+                # Log error but don't fail the entire operation
+                # Customer was created successfully, just email failed
+                print(f"Warning: Failed to send welcome email: {email_error}")
+                # Could add to a retry queue here
+
+            return {
+                "customer_id": customer_id,
+                "email": email,
+                "name": name,
+                "phone_number": phone_number,
+                "customer_folder": f"customers/{customer_id}",
+                "created_date": user['UserCreateDate'].isoformat(),
+                "enabled": user['Enabled'],
+                "user_status": user.get('UserStatus', 'FORCE_CHANGE_PASSWORD'),
+                "temporary_password": temporary_password  # Include the generated password
+            }
+
+        except ClientError as e:
+            error_code = e.response['Error']['Code']
+            error_message = e.response['Error'].get('Message', str(e))
+
+            if error_code == 'UsernameExistsException':
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A user with this email already exists"
+                )
+            elif error_code == 'InvalidPasswordException':
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Password does not meet requirements: {error_message}"
+                )
+            elif error_code == 'InvalidParameterException':
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid parameter: {error_message}"
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to create customer: {error_message}"
+                )
+
+    def list_customers(self, limit: int = 60) -> List[Dict[str, Any]]:
+        """
+        List all customer users in the Customers group.
+
+        Args:
+            limit: Maximum number of users to return
+
+        Returns:
+            List of customer profiles
+
+        Raises:
+            HTTPException: If listing fails
+        """
+        try:
+            response = self.client.list_users_in_group(
+                UserPoolId=self.user_pool_id,
+                GroupName='Customers',
+                Limit=limit
+            )
+
+            customers = []
+            for user in response.get('Users', []):
+                attributes = {attr['Name']: attr['Value'] for attr in user['Attributes']}
+
+                customer_id = attributes.get('sub')
+                customers.append({
+                    "customer_id": customer_id,
+                    "email": attributes.get('email'),
+                    "name": attributes.get('name', ''),
+                    "phone_number": attributes.get('phone_number'),
+                    "customer_folder": f"customers/{customer_id}",
+                    "created_date": user['UserCreateDate'].isoformat(),
+                    "enabled": user['Enabled'],
+                    "user_status": user.get('UserStatus', 'UNKNOWN')
+                })
+
+            return customers
+
+        except ClientError as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to list customers: {str(e)}"
+            )
+
+    def get_customer(self, customer_id: str) -> Dict[str, Any]:
+        """
+        Get a specific customer by their customer_id (sub).
+
+        Args:
+            customer_id: Customer's unique ID
+
+        Returns:
+            Customer profile
+
+        Raises:
+            HTTPException: If customer not found or retrieval fails
+        """
+        try:
+            # List all customers and find the matching one
+            # Note: Cognito doesn't support filtering by custom attributes directly
+            response = self.client.list_users(
+                UserPoolId=self.user_pool_id,
+                Filter=f'sub = "{customer_id}"',
+                Limit=1
+            )
+
+            if not response.get('Users'):
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Customer not found"
+                )
+
+            user = response['Users'][0]
+            attributes = {attr['Name']: attr['Value'] for attr in user['Attributes']}
+
+            return {
+                "customer_id": attributes.get('sub'),
+                "email": attributes.get('email'),
+                "name": attributes.get('name', ''),
+                "phone_number": attributes.get('phone_number'),
+                "customer_folder": f"customers/{customer_id}",
+                "created_date": user['UserCreateDate'].isoformat(),
+                "enabled": user['Enabled'],
+                "user_status": user.get('UserStatus', 'UNKNOWN')
+            }
+
+        except ClientError as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to get customer: {str(e)}"
+            )
+
+    def update_customer(
+        self,
+        customer_id: str,
+        name: str | None = None,
+        phone_number: str | None = None,
+        enabled: bool | None = None
+    ) -> Dict[str, Any]:
+        """
+        Update customer profile.
+
+        Args:
+            customer_id: Customer's unique ID
+            name: New name (optional)
+            phone_number: New phone number in E.164 format (optional)
+            enabled: Enable/disable account (optional)
+
+        Returns:
+            Updated customer profile
+
+        Raises:
+            HTTPException: If update fails
+        """
+        try:
+            # Validate phone number format if provided
+            if phone_number is not None:
+                phone_number = phone_number.strip()
+                if phone_number and not phone_number.startswith('+'):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Phone number must be in E.164 format (e.g., +1234567890)"
+                    )
+                if phone_number and (not phone_number[1:].isdigit() or len(phone_number) < 8 or len(phone_number) > 16):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Invalid phone number format. Must be E.164 format with country code (e.g., +1234567890)"
+                    )
+
+            # First, get the customer to find their username (email)
+            customer = self.get_customer(customer_id)
+            username = customer['email']
+
+            # Update attributes
+            user_attributes = []
+            if name is not None:
+                user_attributes.append({"Name": "name", "Value": name})
+            if phone_number is not None:
+                user_attributes.append({"Name": "phone_number", "Value": phone_number})
+                user_attributes.append({"Name": "phone_number_verified", "Value": "true"})
+
+            if user_attributes:
+                self.client.admin_update_user_attributes(
+                    UserPoolId=self.user_pool_id,
+                    Username=username,
+                    UserAttributes=user_attributes
+                )
+
+            # Enable/disable user
+            if enabled is not None:
+                if enabled:
+                    self.client.admin_enable_user(
+                        UserPoolId=self.user_pool_id,
+                        Username=username
+                    )
+                else:
+                    self.client.admin_disable_user(
+                        UserPoolId=self.user_pool_id,
+                        Username=username
+                    )
+
+            # Return updated customer profile
+            return self.get_customer(customer_id)
+
+        except ClientError as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to update customer: {str(e)}"
+            )
+
+    def resend_customer_welcome(
+        self,
+        customer_id: str
+    ) -> Dict[str, Any]:
+        """
+        Reset customer password and resend welcome email.
+
+        Useful when:
+        - Customer didn't receive the original email
+        - Temporary password expired (7 days)
+        - Customer lost their password
+
+        Cannot be used if customer has already set their own password.
+
+        Args:
+            customer_id: Customer's unique ID
+
+        Returns:
+            Dictionary with customer details and new temporary password
+
+        Raises:
+            HTTPException: If reset fails or user already changed password
+        """
+        try:
+            # Get the customer to find their email
+            customer = self.get_customer(customer_id)
+            username = customer['email']
+
+            # Check user status to see if they've already changed their password
+            user_response = self.client.admin_get_user(
+                UserPoolId=self.user_pool_id,
+                Username=username
+            )
+
+            # Check UserStatus - if CONFIRMED, they've already set their own password
+            user_status = user_response.get('UserStatus')
+            if user_status == 'CONFIRMED':
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Cannot resend welcome email. Customer has already set their own password. Use the forgot password flow instead."
+                )
+
+            # Only allow resend for users who haven't completed initial setup
+            # Valid statuses: FORCE_CHANGE_PASSWORD, RESET_REQUIRED
+            if user_status not in ['FORCE_CHANGE_PASSWORD', 'RESET_REQUIRED']:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Cannot resend welcome email. User status is {user_status}. This feature is only for users who haven't completed initial login."
+                )
+
+            # Generate a new temporary password
+            new_temporary_password = self._generate_temporary_password()
+
+            # Set the new temporary password
+            # This will force password change on next login
+            self.client.admin_set_user_password(
+                UserPoolId=self.user_pool_id,
+                Username=username,
+                Password=new_temporary_password,
+                Permanent=False  # User must change on first login
+            )
+
+            # Send welcome email via SES with new password
+            email_service.send_welcome_email(
+                recipient_email=username,
+                recipient_name=customer['name'],
+                temporary_password=new_temporary_password
+            )
+
+            return {
+                "customer_id": customer_id,
+                "email": username,
+                "name": customer['name'],
+                "temporary_password": new_temporary_password,
+                "message": "Welcome email resent with new temporary password"
+            }
+
+        except ClientError as e:
+            error_code = e.response['Error']['Code']
+            error_message = e.response['Error'].get('Message', str(e))
+
+            if error_code == 'UserNotFoundException':
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Customer not found"
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to resend welcome email: {error_message}"
+                )
+
 
 # Global auth instance
 cognito_auth = CognitoAuth()
@@ -592,4 +1033,93 @@ async def get_current_user(
     token = credentials.credentials
     claims = cognito_auth.verify_token(token)
     return claims
+
+
+async def require_admin(
+    current_user: Dict[str, Any] = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Dependency to require admin role.
+
+    Args:
+        current_user: Current authenticated user
+
+    Returns:
+        User claims if user is admin
+
+    Raises:
+        HTTPException: If user is not an admin
+    """
+    groups = current_user.get("cognito:groups", [])
+
+    if "Admins" not in groups:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+
+    return current_user
+
+
+async def require_customer(
+    current_user: Dict[str, Any] = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Dependency to require customer role.
+
+    Args:
+        current_user: Current authenticated user
+
+    Returns:
+        User claims if user is customer
+
+    Raises:
+        HTTPException: If user is not a customer
+    """
+    groups = current_user.get("cognito:groups", [])
+
+    if "Customers" not in groups:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Customer access required"
+        )
+
+    return current_user
+
+
+def get_user_role(user: Dict[str, Any]) -> str:
+    """
+    Get user's role from their groups.
+
+    Args:
+        user: User claims from token
+
+    Returns:
+        Role name ('admin' or 'customer')
+    """
+    groups = user.get("cognito:groups", [])
+
+    if "Admins" in groups:
+        return "admin"
+    elif "Customers" in groups:
+        return "customer"
+    else:
+        return "unknown"
+
+
+def get_customer_id(user: Dict[str, Any]) -> str | None:
+    """
+    Get customer_id from user claims.
+
+    Args:
+        user: User claims from token
+
+    Returns:
+        Customer ID or None
+    """
+    # Try custom attribute first, then fall back to sub
+    customer_id = user.get("custom:customer_id") or user.get("sub")
+    return customer_id
+
+
 

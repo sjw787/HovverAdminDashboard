@@ -1,9 +1,8 @@
 """
 S3 service for image upload and management.
 """
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Dict, Any
-import mimetypes
 from pathlib import Path
 
 import boto3
@@ -21,28 +20,35 @@ class S3Service:
         self.region = settings.effective_s3_region
         self.presigned_url_expiration = settings.presigned_url_expiration
 
-        # Initialize S3 client
+        # Initialize S3 client with signature version 4 for HTTPS URLs
         # Only use explicit credentials if both are provided and non-empty
         # if settings.aws_access_key_id and settings.aws_secret_access_key:
         #     self.client = boto3.client(
         #         's3',
         #         region_name=self.region,
         #         aws_access_key_id=settings.aws_access_key_id,
-        #         aws_secret_access_key=settings.aws_secret_access_key
+        #         aws_secret_access_key=settings.aws_secret_access_key,
+        #         config=boto3.session.Config(signature_version='s3v4')
         #     )
         # else:
         #     # Use IAM role credentials (for ECS tasks) or default credential chain
-        self.client = boto3.client('s3', region_name=self.region)
+        from botocore.config import Config
+        self.client = boto3.client(
+            's3',
+            region_name=self.region,
+            config=Config(signature_version='s3v4')
+        )
 
-    def _generate_s3_key(self, filename: str) -> str:
+    def _generate_s3_key(self, filename: str, customer_id: str | None = None) -> str:
         """
-        Generate S3 key with date-based organization.
+        Generate S3 key with customer-based or general organization.
 
         Args:
             filename: Original filename
+            customer_id: Customer ID for customer-specific files, None for general files
 
         Returns:
-            S3 key path with date organization
+            S3 key path with customer or general prefix
         """
         now = datetime.utcnow()
         date_prefix = now.strftime("%Y/%m/%d")
@@ -59,7 +65,11 @@ class S3Service:
         else:
             new_filename = f"{safe_filename}_{timestamp}"
 
-        return f"{date_prefix}/{new_filename}"
+        # Organize by customer or general folder
+        if customer_id:
+            return f"customers/{customer_id}/{date_prefix}/{new_filename}"
+        else:
+            return f"general/{date_prefix}/{new_filename}"
 
     def _validate_image(self, file: UploadFile) -> None:
         """
@@ -89,6 +99,7 @@ class S3Service:
     async def upload_image(
         self,
         file: UploadFile,
+        customer_id: str | None = None,
         username: str | None = None
     ) -> Dict[str, Any]:
         """
@@ -96,6 +107,7 @@ class S3Service:
 
         Args:
             file: Uploaded image file
+            customer_id: Customer ID for customer-specific files, None for general files
             username: Optional username for metadata
 
         Returns:
@@ -107,8 +119,8 @@ class S3Service:
         # Validate the image
         self._validate_image(file)
 
-        # Generate S3 key
-        s3_key = self._generate_s3_key(file.filename)
+        # Generate S3 key with customer organization
+        s3_key = self._generate_s3_key(file.filename, customer_id=customer_id)
 
         try:
             # Read file content
@@ -122,6 +134,11 @@ class S3Service:
 
             if username:
                 metadata['uploaded_by'] = username
+
+            if customer_id:
+                metadata['customer_id'] = customer_id
+            else:
+                metadata['folder'] = 'general'
 
             # Upload to S3
             self.client.put_object(
@@ -138,7 +155,9 @@ class S3Service:
                 "filename": file.filename,
                 "size": len(content),
                 "content_type": file.content_type,
-                "upload_date": metadata['upload_date']
+                "upload_date": metadata['upload_date'],
+                "customer_id": customer_id,
+                "folder": f"customers/{customer_id}" if customer_id else "general"
             }
 
         except ClientError as e:
@@ -240,6 +259,37 @@ class S3Service:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to list images: {str(e)}"
             )
+
+    def list_images_for_customer(
+        self,
+        customer_id: str,
+        max_keys: int = 100
+    ) -> List[Dict[str, Any]]:
+        """
+        List images accessible to a specific customer (their files + general files).
+
+        Args:
+            customer_id: Customer ID
+            max_keys: Maximum number of keys to return per prefix
+
+        Returns:
+            List of image dictionaries with metadata and presigned URLs
+        """
+        images = []
+
+        # Get customer-specific images
+        customer_prefix = f"customers/{customer_id}/"
+        customer_images = self.list_images(prefix=customer_prefix, max_keys=max_keys)
+        images.extend(customer_images)
+
+        # Get general images
+        general_images = self.list_images(prefix="general/", max_keys=max_keys)
+        images.extend(general_images)
+
+        # Sort by last modified date (newest first)
+        images.sort(key=lambda x: x['last_modified'], reverse=True)
+
+        return images
 
     def delete_image(self, s3_key: str) -> bool:
         """

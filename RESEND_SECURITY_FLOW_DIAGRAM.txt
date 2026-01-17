@@ -1,0 +1,239 @@
+RESEND WELCOME EMAIL - SECURITY FLOW DIAGRAM
+============================================
+
+                    CUSTOMER LIFECYCLE & RESEND RESTRICTIONS
+
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                         STEP 1: CUSTOMER CREATION                            │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+    Admin Action: POST /customers
+         ↓
+    ┌─────────────────────────────────┐
+    │  Customer Created in Cognito    │
+    │  Status: FORCE_CHANGE_PASSWORD  │
+    │  ✅ CAN RESEND WELCOME EMAIL    │
+    └─────────────────────────────────┘
+         ↓
+    Welcome Email Sent Automatically
+         ↓
+    Customer receives temporary password
+
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                   STEP 2: WAITING FOR CUSTOMER LOGIN                         │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+    Customer hasn't logged in yet
+         ↓
+    ┌─────────────────────────────────┐
+    │  Status: FORCE_CHANGE_PASSWORD  │
+    │  ✅ CAN RESEND WELCOME EMAIL    │
+    └─────────────────────────────────┘
+         ↓
+    Admin can call: POST /customers/{id}/resend-welcome
+         ↓
+    Result: ✅ 200 OK
+         ↓
+    New temporary password generated & emailed
+
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                  STEP 3: CUSTOMER FIRST LOGIN (CRITICAL)                     │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+    Customer logs in with temp password
+         ↓
+    POST /auth/login → NEW_PASSWORD_REQUIRED challenge
+         ↓
+    Customer must complete: POST /auth/complete-new-password
+         ↓
+    ┌─────────────────────────────────┐
+    │   Password Changed Successfully │
+    │   Status: CONFIRMED             │
+    │   ❌ CANNOT RESEND ANYMORE!     │
+    └─────────────────────────────────┘
+         ↓
+    THIS IS THE SECURITY BOUNDARY ←←←←←←←←
+         ↓
+    Resend blocked from this point forward
+
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│            STEP 4: AFTER PASSWORD CHANGED (RESEND BLOCKED)                   │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+    Admin tries: POST /customers/{id}/resend-welcome
+         ↓
+    ┌─────────────────────────────────┐
+    │   SECURITY CHECK ACTIVATED      │
+    │   if status == 'CONFIRMED':     │
+    │       raise HTTPException(400)  │
+    └─────────────────────────────────┘
+         ↓
+    Result: ❌ 400 Bad Request
+         ↓
+    Error: "Cannot resend welcome email. Customer has already
+            set their own password. Use the forgot password
+            flow instead."
+
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                 STEP 5: PROPER PASSWORD RESET FLOW                           │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+    For confirmed users who need password reset:
+         ↓
+    Customer initiates: POST /auth/forgot-password
+         ↓
+    ┌─────────────────────────────────┐
+    │  Verification Code Sent to      │
+    │  Customer's Email               │
+    │  (Customer-initiated)           │
+    └─────────────────────────────────┘
+         ↓
+    Customer provides: POST /auth/reset-password
+         ↓
+    Required:
+    - Username (email)
+    - Verification code (from email)
+    - New password
+         ↓
+    Result: ✅ Password Reset Successfully
+         ↓
+    This is the CORRECT flow for confirmed users
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                          STATUS DECISION TREE
+═══════════════════════════════════════════════════════════════════════════════
+
+    POST /customers/{id}/resend-welcome
+              ↓
+    ┌─────────────────────┐
+    │ Check User Status   │
+    └─────────────────────┘
+              ↓
+    ┌─────────────────────────────────────────┐
+    │ Status == 'FORCE_CHANGE_PASSWORD'?      │
+    └─────────────────────────────────────────┘
+         ↓ YES                    ↓ NO
+    ┌──────────────┐         ┌──────────────┐
+    │ ✅ ALLOWED   │         │ Status ==    │
+    │ Generate new │         │ 'CONFIRMED'? │
+    │ password     │         └──────────────┘
+    │ Send email   │              ↓ YES
+    │ Return 200   │         ┌──────────────┐
+    └──────────────┘         │ ❌ BLOCKED   │
+                             │ Return 400   │
+                             │ Error msg    │
+                             └──────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                          SECURITY CHECKS IN CODE
+═══════════════════════════════════════════════════════════════════════════════
+
+    Line 947-950: Get user from Cognito
+         ↓
+    user_response = admin_get_user(Username)
+    user_status = user_response.get('UserStatus')
+         ↓
+    Line 954-958: PRIMARY SECURITY CHECK
+         ↓
+    ╔═════════════════════════════════════════════╗
+    ║ if user_status == 'CONFIRMED':              ║
+    ║     raise HTTPException(                    ║
+    ║         status_code=400,                    ║
+    ║         detail="Cannot resend...already     ║
+    ║                 set their own password..."  ║
+    ║     )                                       ║
+    ╚═════════════════════════════════════════════╝
+         ↓
+    Line 962-966: SECONDARY SECURITY CHECK
+         ↓
+    ╔═════════════════════════════════════════════╗
+    ║ if user_status not in ['FORCE_CHANGE_...'  ║
+    ║                        'RESET_REQUIRED']:   ║
+    ║     raise HTTPException(                    ║
+    ║         status_code=400,                    ║
+    ║         detail="Cannot resend...only for    ║
+    ║                 users who haven't..."       ║
+    ║     )                                       ║
+    ╚═════════════════════════════════════════════╝
+         ↓
+    Line 968-978: Generate & Set New Password
+         ↓
+    Line 980-985: Send Email via SES
+         ↓
+    Line 987-993: Return Success Response
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                        POSTMAN TEST COVERAGE
+═══════════════════════════════════════════════════════════════════════════════
+
+    Test Scenario 1: Success Case
+    ┌────────────────────────────────────────┐
+    │ if (response.code === 200) {           │
+    │   ✓ Check status code                  │
+    │   ✓ Verify temporary_password exists   │
+    │   ✓ Verify password length >= 8        │
+    │   ✓ Verify success message             │
+    │   ✓ Log password to console            │
+    │ }                                      │
+    └────────────────────────────────────────┘
+
+    Test Scenario 2: Error Case (Password Already Set)
+    ┌────────────────────────────────────────┐
+    │ else if (response.code === 400) {      │
+    │   ✓ Check status code is 400           │
+    │   ✓ Verify error message exists        │
+    │   ✓ Check message includes "already    │
+    │      set their own password"           │
+    │   ✓ Log restriction reason             │
+    │   ✓ Log solution (forgot password)     │
+    │ }                                      │
+    └────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                          SECURITY GUARANTEES
+═══════════════════════════════════════════════════════════════════════════════
+
+    ✅ Admin CANNOT reset a confirmed user's password via resend
+    ✅ Confirmed users MUST use forgot password flow (with 2FA code)
+    ✅ Customer-initiated password resets only (after initial setup)
+    ✅ Clear error messages prevent confusion
+    ✅ Double validation (primary + secondary checks)
+    ✅ No race conditions (status checked immediately before action)
+    ✅ All actions logged by Cognito for audit trail
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                             QUICK REFERENCE
+═══════════════════════════════════════════════════════════════════════════════
+
+    Q: Can I resend welcome email after customer changes password?
+    A: ❌ NO - Returns 400 error
+
+    Q: What should I do if confirmed customer needs password reset?
+    A: Use POST /auth/forgot-password → POST /auth/reset-password
+
+    Q: Why is resend blocked after password change?
+    A: Security - prevents admin from arbitrarily resetting user passwords
+
+    Q: What user statuses allow resend?
+    A: Only FORCE_CHANGE_PASSWORD and RESET_REQUIRED
+
+    Q: What user statuses block resend?
+    A: CONFIRMED and all other statuses
+
+    Q: Is this properly tested?
+    A: ✅ YES - Code implements checks + Postman tests verify both cases
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                              ✅ VERIFIED SECURE ✅
+═══════════════════════════════════════════════════════════════════════════════

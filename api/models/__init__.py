@@ -63,6 +63,53 @@ class MessageResponse(BaseModel):
     success: bool = True
 
 
+# Customer Management Models
+class CreateCustomerRequest(BaseModel):
+    """Create customer request model."""
+    email: str = Field(..., description="Customer's email address (required)")
+    name: str = Field(..., description="Customer's full name")
+    phone_number: str | None = Field(None, description="Phone number in E.164 format (+1234567890)")
+
+
+class CustomerProfileResponse(BaseModel):
+    """Customer profile response model."""
+    customer_id: str = Field(..., description="Unique customer ID (Cognito sub)")
+    email: str
+    name: str
+    phone_number: str | None = None
+    customer_folder: str = Field(..., description="S3 folder path for customer files")
+    created_date: str
+    enabled: bool = True
+    user_status: str = Field(..., description="Cognito user status (FORCE_CHANGE_PASSWORD, CONFIRMED, etc.)")
+
+
+class CustomerCreatedResponse(CustomerProfileResponse):
+    """Customer created response model with temporary password."""
+    temporary_password: str = Field(..., description="Auto-generated temporary password (must be changed on first login)")
+
+
+class ResendWelcomeResponse(BaseModel):
+    """Response for resending welcome email."""
+    customer_id: str = Field(..., description="Customer ID")
+    email: str = Field(..., description="Customer email")
+    name: str = Field(..., description="Customer name")
+    temporary_password: str = Field(..., description="New temporary password")
+    message: str = Field(..., description="Success message")
+
+
+class UpdateCustomerRequest(BaseModel):
+    """Update customer request model."""
+    name: str | None = Field(None, description="Customer's full name")
+    phone_number: str | None = Field(None, description="Phone number in E.164 format")
+    enabled: bool | None = Field(None, description="Enable or disable customer account")
+
+
+class CustomerListResponse(BaseModel):
+    """Customer list response model."""
+    count: int
+    customers: List[CustomerProfileResponse]
+
+
 # Image Models
 class UploadResponse(BaseModel):
     """Image upload response model."""
@@ -72,6 +119,8 @@ class UploadResponse(BaseModel):
     size: int
     content_type: str
     upload_date: str
+    customer_id: str | None = None
+    folder: str
     message: str = "Image uploaded successfully"
 
 
