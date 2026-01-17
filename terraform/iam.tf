@@ -100,7 +100,19 @@ resource "aws_iam_role_policy" "ecs_task_cognito" {
 
           # Password reset
           "cognito-idp:ForgotPassword",
-          "cognito-idp:ConfirmForgotPassword"
+          "cognito-idp:ConfirmForgotPassword",
+
+          # Admin operations for customer management
+          "cognito-idp:AdminCreateUser",
+          "cognito-idp:AdminSetUserPassword",
+          "cognito-idp:AdminAddUserToGroup",
+          "cognito-idp:AdminRemoveUserFromGroup",
+          "cognito-idp:AdminListGroupsForUser",
+          "cognito-idp:AdminUpdateUserAttributes",
+          "cognito-idp:AdminDeleteUser",
+          "cognito-idp:AdminEnableUser",
+          "cognito-idp:AdminDisableUser",
+          "cognito-idp:ListUsersInGroup"
         ]
         Resource = aws_cognito_user_pool.main.arn
       }

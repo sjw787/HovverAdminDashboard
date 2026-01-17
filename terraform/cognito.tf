@@ -37,6 +37,19 @@ resource "aws_cognito_user_pool" "main" {
     }
   }
 
+  # Custom attribute for customer_id
+  schema {
+    name                = "customer_id"
+    attribute_data_type = "String"
+    required            = false
+    mutable             = true
+
+    string_attribute_constraints {
+      min_length = 1
+      max_length = 256
+    }
+  }
+
   # Email configuration
   email_configuration {
     email_sending_account = "COGNITO_DEFAULT"
@@ -87,13 +100,15 @@ resource "aws_cognito_user_pool_client" "main" {
     "email_verified",
     "name",
     "phone_number",
-    "phone_number_verified"
+    "phone_number_verified",
+    "custom:customer_id"
   ]
 
   write_attributes = [
     "email",
     "name",
-    "phone_number"
+    "phone_number",
+    "custom:customer_id"
   ]
 }
 
@@ -109,4 +124,19 @@ resource "random_string" "domain_suffix" {
   upper   = false
 }
 
+# Cognito User Group - Admins
+resource "aws_cognito_user_group" "admins" {
+  name         = "Admins"
+  user_pool_id = aws_cognito_user_pool.main.id
+  description  = "Administrator users with full access to manage customers and files"
+  precedence   = 1
+}
+
+# Cognito User Group - Customers
+resource "aws_cognito_user_group" "customers" {
+  name         = "Customers"
+  user_pool_id = aws_cognito_user_pool.main.id
+  description  = "Customer users with access to their own files and general files"
+  precedence   = 2
+}
 
