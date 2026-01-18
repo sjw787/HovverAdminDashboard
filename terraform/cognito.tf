@@ -55,6 +55,19 @@ resource "aws_cognito_user_pool" "main" {
     email_sending_account = "COGNITO_DEFAULT"
   }
 
+  # Admin create user config (for customer creation)
+  admin_create_user_config {
+    # Allow only admins to create users (not self-service signup)
+    allow_admin_create_user_only = true
+
+    # Customize invitation message
+    invite_message_template {
+      email_subject = "Welcome to Hover - Your Account Has Been Created"
+      email_message = "Hello {username},\n\nYour Hover account has been created!\n\nUsername: {username}\nTemporary Password: {####}\n\nPlease log in and change your password on first login.\n\nBest regards,\nHover Team"
+      sms_message   = "Your Hover username is {username} and temporary password is {####}"
+    }
+  }
+
   # User pool add-ons
   user_pool_add_ons {
     advanced_security_mode = "ENFORCED"
