@@ -41,9 +41,10 @@ class Settings(BaseSettings):
     max_file_size: int = 10 * 1024 * 1024  # 10MB in bytes
     allowed_image_types: list[str] = ["image/jpeg", "image/png", "image/webp", "image/gif"]
 
-    # Email Configuration
-    ses_sender_email: str = "noreply@samwylock.com"
-    ses_region: str | None = None  # Defaults to aws_region if not set
+    # Email Configuration (Resend)
+    resend_api_key: str
+    sender_email: str = "noreply@samwylock.com"
+    sender_name: str = "Hovver"
     frontend_url: str = "https://dev.samwylock.com"  # Frontend URL for email links
 
     @property
