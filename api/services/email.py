@@ -35,7 +35,7 @@ class EmailService:
         Raises:
             Exception: If email sending fails (allows customer creation to continue)
         """
-        subject = "Welcome to Hovver - Your Account Has Been Created"
+        subject = "Welcome to Hover - Your Account Has Been Created"
 
         # Get frontend URL from settings
         login_url = settings.frontend_url
@@ -105,12 +105,12 @@ class EmailService:
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>Welcome to Hovver!</h1>
+                    <h1>Welcome to Hover!</h1>
                 </div>
                 <div class="content">
                     <p>Hello {recipient_name},</p>
                     
-                    <p>Your Hovver account has been created! You can now access your personalized dashboard and view your photos.</p>
+                    <p>Your Hover account has been created! You can now access your personalized dashboard and view your photos.</p>
                     
                     <div class="credentials">
                         <p><strong>Your Login Credentials:</strong></p>
@@ -133,11 +133,11 @@ class EmailService:
                     
                     <p>If you have any questions or need assistance, please don't hesitate to reach out.</p>
                     
-                    <p>Best regards,<br>The Hovver Team</p>
+                    <p>Best regards,<br>The Hover Team</p>
                 </div>
                 <div class="footer">
                     <p>This email was sent to {recipient_email}</p>
-                    <p>© 2026 Hovver. All rights reserved.</p>
+                    <p>© 2026 Hover. All rights reserved.</p>
                 </div>
             </div>
         </body>

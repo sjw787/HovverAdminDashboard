@@ -14,7 +14,6 @@ from api.models import (
 )
 from api.services import cognito_auth, get_current_user, security
 
-
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
