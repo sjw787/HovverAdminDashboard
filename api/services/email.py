@@ -1,9 +1,15 @@
 """
 Email service using Resend for sending customer notifications.
 """
+from pathlib import Path
 import resend
 
 from config import settings
+
+
+# Get the project root directory (where templates/ is located)
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+TEMPLATES_DIR = PROJECT_ROOT / "templates"
 
 
 class EmailService:
@@ -14,6 +20,25 @@ class EmailService:
         resend.api_key = settings.resend_api_key
         self.sender_email = settings.sender_email
         self.sender_name = settings.sender_name
+
+    def _load_template(self, template_name: str) -> str:
+        """
+        Load an email template from the templates directory.
+
+        Args:
+            template_name: Name of the template file (e.g., 'customer_welcome.html')
+
+        Returns:
+            Template content as string
+
+        Raises:
+            FileNotFoundError: If template file doesn't exist
+        """
+        template_path = TEMPLATES_DIR / template_name
+        if not template_path.exists():
+            raise FileNotFoundError(f"Template not found: {template_path}")
+
+        return template_path.read_text(encoding='utf-8')
 
     def send_welcome_email(
         self,
@@ -37,112 +62,14 @@ class EmailService:
         """
         subject = "Welcome to Hover - Your Account Has Been Created"
 
-        # Get frontend URL from settings
-        login_url = settings.frontend_url
-
-        # HTML email body
-        html_body = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                body {{
-                    font-family: Arial, sans-serif;
-                    line-height: 1.6;
-                    color: #333;
-                }}
-                .container {{
-                    max-width: 600px;
-                    margin: 0 auto;
-                    padding: 20px;
-                }}
-                .header {{
-                    background-color: #4CAF50;
-                    color: white;
-                    padding: 20px;
-                    text-align: center;
-                    border-radius: 5px 5px 0 0;
-                }}
-                .content {{
-                    background-color: #f9f9f9;
-                    padding: 30px;
-                    border: 1px solid #ddd;
-                    border-radius: 0 0 5px 5px;
-                }}
-                .credentials {{
-                    background-color: #fff;
-                    padding: 15px;
-                    margin: 20px 0;
-                    border-left: 4px solid #4CAF50;
-                }}
-                .password {{
-                    font-family: monospace;
-                    font-size: 18px;
-                    font-weight: bold;
-                    color: #d32f2f;
-                }}
-                .button {{
-                    display: inline-block;
-                    padding: 12px 30px;
-                    margin: 20px 0;
-                    background-color: #4CAF50;
-                    color: white;
-                    text-decoration: none;
-                    border-radius: 5px;
-                    font-weight: bold;
-                }}
-                .button:hover {{
-                    background-color: #45a049;
-                }}
-                .footer {{
-                    text-align: center;
-                    padding: 20px;
-                    color: #666;
-                    font-size: 12px;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <h1>Welcome to Hover!</h1>
-                </div>
-                <div class="content">
-                    <p>Hello {recipient_name},</p>
-                    
-                    <p>Your Hover account has been created! You can now access your personalized dashboard and view your photos.</p>
-                    
-                    <div class="credentials">
-                        <p><strong>Your Login Credentials:</strong></p>
-                        <p><strong>Username:</strong> {recipient_email}</p>
-                        <p><strong>Temporary Password:</strong> <span class="password">{temporary_password}</span></p>
-                    </div>
-                    
-                    <p><strong>Important:</strong> For security reasons, you must change this password when you first log in.</p>
-                    
-                    <div style="text-align: center;">
-                        <a href="{login_url}" class="button">Login to Your Account</a>
-                    </div>
-                    
-                    <p>To get started:</p>
-                    <ol>
-                        <li>Click the button above or visit <a href="{login_url}">{login_url}</a></li>
-                        <li>Enter your username and temporary password</li>
-                        <li>Follow the prompts to set your new password</li>
-                    </ol>
-                    
-                    <p>If you have any questions or need assistance, please don't hesitate to reach out.</p>
-                    
-                    <p>Best regards,<br>The Hover Team</p>
-                </div>
-                <div class="footer">
-                    <p>This email was sent to {recipient_email}</p>
-                    <p>© 2026 Hover. All rights reserved.</p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
+        # Load template and format with values
+        template = self._load_template('customer_welcome.html')
+        html_body = template.format(
+            recipient_name=recipient_name,
+            recipient_email=recipient_email,
+            temporary_password=temporary_password,
+            login_url=settings.frontend_url
+        )
 
         try:
             # Send email via Resend
@@ -165,6 +92,61 @@ class EmailService:
             error_message = str(e)
             print(f"Failed to send email via Resend: {error_message}")
             raise Exception(f"Failed to send welcome email: {error_message}")
+
+    def send_admin_welcome_email(
+        self,
+        recipient_email: str,
+        recipient_name: str,
+        temporary_password: str
+    ) -> bool:
+        """
+        Send welcome email with temporary password to admin user.
+
+        This method uses the same template structure as customer emails but with admin-specific messaging.
+        Use this when manually creating admin users in Cognito console.
+
+        Args:
+            recipient_email: Admin's email address
+            recipient_name: Admin's name
+            temporary_password: Temporary password to include in email
+
+        Returns:
+            True if email sent successfully
+
+        Raises:
+            Exception: If email sending fails
+        """
+        subject = "Welcome to Hover Admin - Your Account Has Been Created"
+
+        # Load template and format with values
+        template = self._load_template('admin_welcome.html')
+        html_body = template.format(
+            recipient_name=recipient_name,
+            recipient_email=recipient_email,
+            temporary_password=temporary_password,
+            login_url=settings.frontend_url
+        )
+
+        try:
+            # Send email via Resend
+            response = resend.Emails.send({
+                "from": f"{self.sender_name} <{self.sender_email}>",
+                "to": [recipient_email],
+                "subject": subject,
+                "html": html_body,
+            })
+
+            # Log the email ID for tracking
+            email_id = response.get('id')
+            print(f"Admin welcome email sent successfully via Resend. Email ID: {email_id}")
+
+            return True
+
+        except Exception as e:
+            # Raise regular Exception
+            error_message = str(e)
+            print(f"Failed to send admin welcome email via Resend: {error_message}")
+            raise Exception(f"Failed to send admin welcome email: {error_message}")
 
 
 # Global email service instance

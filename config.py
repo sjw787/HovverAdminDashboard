@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     presigned_url_expiration: int = 3600  # 1 hour in seconds
 
     # Application Configuration
-    app_name: str = "Hovver Admin Dashboard"
+    app_name: str = "Hover Admin Dashboard"
     app_version: str = "0.1.0"
     environment: str = "development"
 
@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     # Email Configuration (Resend)
     resend_api_key: str
     sender_email: str = "noreply@samwylock.com"
-    sender_name: str = "Hovver"
+    sender_name: str = "Hover"
     frontend_url: str = "https://dev.samwylock.com"  # Frontend URL for email links
 
     @property
