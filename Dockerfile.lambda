@@ -1,0 +1,21 @@
+# Lambda-compatible Dockerfile
+FROM public.ecr.aws/lambda/python:3.14
+
+# Set working directory
+WORKDIR ${LAMBDA_TASK_ROOT}
+
+# Copy project files for dependency installation
+COPY pyproject.toml uv.lock ./
+
+# Install uv
+RUN pip install --no-cache-dir uv
+
+# Export dependencies to requirements.txt and install system-wide
+RUN uv export --no-dev --no-hashes > requirements.txt && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY . .
+
+# Set the CMD to the Lambda handler
+CMD ["lambda_handler.handler"]

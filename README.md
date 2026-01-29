@@ -8,8 +8,9 @@ Admin Dashboard Backend for Commercial Photography Website with AWS Cognito auth
 - **S3 Image Storage**: Upload and manage images with date-based organization
 - **Image Gallery**: List and preview all uploaded images with presigned URLs
 - **RESTful API**: FastAPI-based REST endpoints with OpenAPI documentation
-- **AWS ECS Deployment**: Production-ready deployment on ECS Fargate
+- **Flexible Deployment**: Deploy to either ECS Fargate or AWS Lambda (configurable at deployment time)
 - **Infrastructure as Code**: Complete Terraform configuration for all AWS resources
+- **Email Integration**: Customer welcome emails via Resend API
 
 ## Architecture
 
@@ -353,16 +354,56 @@ FastAPI automatically generates interactive API documentation:
 
 ## Deployment
 
-The application is designed to run on AWS ECS Fargate with the following components:
+The application supports **flexible deployment** to either AWS ECS Fargate or AWS Lambda, with the choice made at deployment time.
+
+### Deployment Modes
+
+#### ECS Fargate (Default)
+- Traditional container deployment with auto-scaling
+- Best for production with steady traffic
+- Always-on architecture with no cold starts
+- ~$15-20/month base cost
+
+#### AWS Lambda (Serverless)
+- Serverless deployment with automatic scaling to zero
+- Best for development/testing or variable workloads
+- Pay only for actual usage
+- $0 when idle, ~$1-10/month for low-medium traffic
+
+### Quick Deployment
+
+```powershell
+# 1. Choose deployment mode in terraform/terraform.tfvars
+deployment_mode = "ecs"  # or "lambda"
+
+# 2. Apply infrastructure
+cd terraform
+terraform apply
+
+# 3. Build and deploy
+cd ..
+.\build_and_push_docker.ps1 -Profile your-aws-profile -Mode ecs  # or -Mode lambda
+```
+
+**See Full Documentation:**
+- `DEPLOYMENT_MODES.md` - Comprehensive deployment guide with comparisons, troubleshooting, and best practices
+- `QUICK_DEPLOY.md` - Quick reference for common deployment commands
+
+### Architecture Components
+
+Both deployment modes share the following infrastructure:
 
 1. **VPC**: Isolated network with public and private subnets
-2. **VPC Endpoints**: Private connectivity to AWS services (S3, ECR, CloudWatch)
-3. **Application Load Balancer**: Routes traffic to ECS tasks
-4. **ECS Fargate**: Runs containerized application
-5. **Cognito User Pool**: Manages user authentication
-6. **S3 Bucket**: Stores uploaded images
-7. **CloudWatch**: Logs and monitoring
-8. **Auto Scaling**: Scales based on CPU/memory usage
+2. **VPC Endpoints**: Private connectivity to AWS services (S3, ECR, CloudWatch, Secrets Manager)
+3. **Application Load Balancer**: Routes traffic to compute (ECS or Lambda)
+4. **Cognito User Pool**: Manages user authentication
+5. **S3 Bucket**: Stores uploaded images
+6. **CloudWatch**: Logs and monitoring
+7. **ECR**: Container image registry
+
+**Mode-Specific Components:**
+- **ECS Mode**: ECS Cluster, Service, Task Definition, Auto Scaling
+- **Lambda Mode**: Lambda Function, Function URL, Lambda execution role
 
 ### Cost-Optimized Architecture
 
@@ -381,9 +422,19 @@ This deployment uses **VPC Endpoints** instead of NAT Gateways for cost optimiza
   - Enhanced security (no internet access required)
   - Higher reliability (no single point of failure)
 
-**Monthly Cost Estimate:** ~$54-61/month (idle)
+**Monthly Cost Estimate:** 
+- ECS: ~$54-61/month (idle) | Lambda: $0 (idle), ~$1-10/month (low-medium traffic)
 
 See `VPC_ENDPOINTS_MIGRATION.md` for detailed information about the VPC endpoint architecture.
+
+### Switching Between Deployment Modes
+
+Simply change `deployment_mode` in `terraform/terraform.tfvars` and re-run:
+
+```powershell
+terraform apply
+.\build_and_push_docker.ps1 -Profile your-aws-profile -Mode [ecs|lambda]
+```
 
 ### Updating the Application
 

@@ -1,6 +1,7 @@
 """
 Configuration module for AWS services and application settings.
 """
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,8 +17,6 @@ class Settings(BaseSettings):
 
     # AWS Configuration
     aws_region: str = "us-east-1"
-    aws_access_key_id: str | None = None  # Optional, prefer IAM roles
-    aws_secret_access_key: str | None = None  # Optional, prefer IAM roles
 
     # Cognito Configuration
     cognito_user_pool_id: str

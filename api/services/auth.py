@@ -29,18 +29,29 @@ class CognitoAuth:
         self.client_id = settings.cognito_client_id
         self.region = settings.effective_cognito_region
 
+        # Debug: Log credential and environment status
+        print(f"[AUTH INIT] Starting authentication service initialization")
+        print(f"[AUTH INIT] Region: {self.region}")
+        print(f"[AUTH INIT] User Pool ID: {self.user_pool_id}")
+
+        # Check environment variables
+        import os
+
         # Initialize Cognito client
-        # Only use explicit credentials if both are provided and non-empty
-        if settings.aws_access_key_id and settings.aws_secret_access_key:
-            self.client = boto3.client(
-                'cognito-idp',
-                region_name=self.region,
-                aws_access_key_id=settings.aws_access_key_id,
-                aws_secret_access_key=settings.aws_secret_access_key
-            )
-        else:
-            # Use IAM role credentials (for ECS tasks) or default credential chain
-            self.client = boto3.client('cognito-idp', region_name=self.region)
+        print(f"[AUTH INIT] Using IAM role / default credential chain")
+        self.client = boto3.client('cognito-idp', region_name=self.region)
+
+        # Test the client connection
+        try:
+            print(f"[AUTH INIT] Testing Cognito connection...")
+            # Try to get the caller identity to verify credentials work
+            sts = boto3.client('sts', region_name=self.region)
+            identity = sts.get_caller_identity()
+            print(f"[AUTH INIT] STS Identity - Account: {identity.get('Account')}, ARN: {identity.get('Arn')}")
+        except Exception as e:
+            print(f"[AUTH INIT] ERROR getting caller identity: {e}")
+
+        print(f"[AUTH INIT] Cognito client initialized successfully")
 
         # Cache for JWKS keys
         self._jwks: Dict[str, Any] | None = None
